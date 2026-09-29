@@ -74,6 +74,24 @@ def changed_sections(old: str, new: str) -> set[str]:
     return {k for k in a.keys() | b.keys() if a.get(k) != b.get(k) and k is not None}
 
 
+def _pppoe_ifaces(text: str) -> dict[str, str]:
+    """name -> full `interface=` value. accel-ppp 1.14.0 reads these only at
+    start (pppoe_init -> load_interfaces); reload ignores them, so they are
+    synced at runtime with `pppoe interface add|del`."""
+    vals = [l.partition("=")[2] for l in _sections(text).get("pppoe", []) if l.startswith("interface=")]
+    return {v.split(",")[0]: v for v in vals}
+
+
+def _sync_ifaces(daemon, old: str, new: str) -> None:
+    a, b = _pppoe_ifaces(old), _pppoe_ifaces(new)
+    for name, opt in a.items():
+        if b.get(name) != opt:
+            daemon.pppoe_del(name)
+    for name, opt in b.items():
+        if a.get(name) != opt:
+            daemon.pppoe_add(opt)
+
+
 def _read(p: Path) -> str | None:
     return p.read_text(encoding="utf-8") if p.exists() else None
 
@@ -160,6 +178,11 @@ class ConfigManager:
         if restart_for and not allow_restart:
             raise ApplyError(f"changes in {sorted(restart_for)} need an accel-ppp restart, which drops "
                              "every PPPoE session; re-run with --allow-restart")
+        old_if, new_if = _pppoe_ifaces(old_main or ""), _pppoe_ifaces(new.main)
+        dropped = sorted(n for n in old_if if old_if[n] != new_if.get(n))
+        if running and not restart_for and dropped and not allow_restart:
+            raise ApplyError(f"removing/changing PPPoE interface(s) {dropped} disconnects the sessions on "
+                             "them; re-run with --allow-restart")
 
         diff = "".join(difflib.unified_diff((old_main or "").splitlines(True), new.main.splitlines(True)))
         backup = self._backup()
@@ -178,6 +201,7 @@ class ConfigManager:
                 self.daemon.restart()
             else:
                 self.daemon.reload()
+                _sync_ifaces(self.daemon, old_main or "", new.main)
             failures = self.health(cfg)
         except Exception as e:  # any activation error means: roll back
             failures = [str(e)]
@@ -191,6 +215,7 @@ class ConfigManager:
                     self.daemon.restart()
                 else:
                     self.daemon.reload()
+                    _sync_ifaces(self.daemon, new.main, old_main)
             except Exception as e:
                 failures.append(f"re-activating previous config failed: {e}")
             self.audit(**who, result="rolled_back", detail=failures, diff=diff)

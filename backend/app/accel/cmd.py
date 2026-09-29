@@ -115,3 +115,9 @@ class AccelService:
 
     def reload(self) -> None:
         self.accel.reload()
+
+    def pppoe_add(self, opt: str) -> None:
+        self.accel.run("pppoe", "interface", "add", opt)
+
+    def pppoe_del(self, name: str) -> None:
+        self.accel.run("pppoe", "interface", "del", name)

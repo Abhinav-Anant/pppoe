@@ -42,6 +42,12 @@ accel-ppp restart, which disconnects every subscriber, so apply refuses it unles
 `--allow-restart` is given. Everything else is applied with `accel-cmd reload`; established
 sessions stay up.
 
+`[pppoe] interface=` lines are also read only at start (1.14.0 `pppoe_init` →
+`load_interfaces`); reload ignores them. Apply therefore syncs them live with
+`accel-cmd pppoe interface add|del`: a **new** interface is added without disturbing anyone;
+**removing or changing** an interface disconnects the sessions on it and needs
+`--allow-restart`.
+
 **Pools.** accel-ppp 1.14.0 allocates every address of a CIDR pool, including `x.x.x.0` and
 `x.x.x.255`. The renderer therefore writes per-/24 ranges (`100.64.0.1-254,name=lab`).
 

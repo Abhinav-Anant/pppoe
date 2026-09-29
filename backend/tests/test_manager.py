@@ -28,6 +28,12 @@ class FakeDaemon:
     def reload(self):
         self.calls.append("reload")
 
+    def pppoe_add(self, opt):
+        self.calls.append(f"add:{opt}")
+
+    def pppoe_del(self, name):
+        self.calls.append(f"del:{name}")
+
 
 @pytest.fixture
 def env(tmp_path):
@@ -84,11 +90,11 @@ def test_failed_health_rolls_back(env, base_cfg):
     mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
     good_conf, good_yaml = paths.accel_conf.read_text(), paths.config.read_text()
     failures.append("PPPoE: not serving veth9")
-    base_cfg["pppoe"]["interfaces"] = [{"name": "veth9"}]
+    base_cfg["pppoe"]["interfaces"].append({"name": "veth9"})
     with pytest.raises(ApplyError, match="restored"):
         mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
     assert paths.accel_conf.read_text() == good_conf and paths.config.read_text() == good_yaml
-    assert daemon.calls == ["start", "reload", "reload"]
+    assert daemon.calls == ["start", "reload", "add:veth9", "reload", "del:veth9"]
     assert audit(paths)[-1]["result"] == "rolled_back"
     assert [m["version"] for m in mgr.history()] == [1]
 
@@ -140,6 +146,34 @@ def test_backup_and_restore(env, base_cfg):
     mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
     assert mgr.restore_archive(archive, "root", "t") == "applied as version 3"
     assert "mtu=1492" in paths.accel_conf.read_text()
+
+
+def test_new_pppoe_interface_added_live(env, base_cfg):
+    # accel-ppp 1.14.0 reads [pppoe] interface= only at start; reload ignores it
+    mgr, _, daemon, _, tmp = env
+    mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    base_cfg["pppoe"]["interfaces"].append({"name": "eth0.4044", "padi_limit": 100})
+    assert mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t") == "applied as version 2"
+    assert daemon.calls == ["start", "reload", "add:eth0.4044,padi-limit=100"]
+
+
+def test_removing_pppoe_interface_needs_allow_restart(env, base_cfg):
+    mgr, _, daemon, _, tmp = env
+    base_cfg["pppoe"]["interfaces"].append({"name": "veth1"})
+    mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    base_cfg["pppoe"]["interfaces"].pop()
+    with pytest.raises(ApplyError, match="veth1.*allow-restart"):
+        mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    assert mgr.apply(tmp / "c.yaml", "root", "t", allow_restart=True) == "applied as version 2"
+    assert daemon.calls == ["start", "reload", "del:veth1"]
+
+
+def test_changing_pppoe_interface_options_readds(env, base_cfg):
+    mgr, _, daemon, _, tmp = env
+    mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    base_cfg["pppoe"]["interfaces"][0]["padi_limit"] = 50
+    mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t", allow_restart=True)
+    assert daemon.calls == ["start", "reload", "del:veth0", "add:veth0,padi-limit=50"]
 
 
 def test_changed_sections():
