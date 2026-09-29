@@ -126,8 +126,10 @@ def check_nat(cfg: BngConfig) -> Check:
 
 
 def check_cake(cfg: BngConfig) -> Check:
-    if not cfg.qos or not cfg.qos.cake.enabled:
+    if not cfg.qos:
         return Check("CAKE", "SKIP", "no qos.cake configured")
+    if not cfg.qos.cake.enabled:
+        return Check("CAKE", "SKIP", "qos.cake disabled")
     st = cake.status(cfg)
     missing = [k.split(" ")[0] for k, v in st.items() if v is None]
     detail = ", ".join(f"{k.split(' ')[0]} {v['bandwidth_mbit']:.0f} Mbit" for k, v in st.items() if v)

@@ -120,3 +120,16 @@ def test_parse_real_tc_json():
     from pathlib import Path
     s = cake.parse_cake_json((Path(__file__).parent / "fixtures" / "tc_cake_ifb.json").read_text())
     assert s["bandwidth_mbit"] == 100.0 and s["drops"] > 0 and s["packets"] > 0
+
+
+def test_clear_lines_never_fail(base_cfg):
+    # bng01: clear-only script exited 1 (ip link del of a missing IFB) and failed bng-qos.service
+    s = cake.render(cfg(base_cfg, enabled=False), CAPS)
+    clear = [l for l in s.splitlines() if l.startswith(("tc qdisc del", "ip link del"))]
+    assert clear and all(l.endswith("|| true") for l in clear)
+
+
+def test_health_cake_disabled_says_so(base_cfg):
+    from app.monitoring import health
+    c = health.check_cake(cfg(base_cfg, enabled=False))
+    assert c.status == "SKIP" and "disabled" in c.detail
