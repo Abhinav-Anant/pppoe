@@ -83,6 +83,7 @@ def _parser() -> argparse.ArgumentParser:
     x = sub.add_parser("restore")
     x.add_argument("archive", type=Path)
     x.add_argument("--allow-restart", action="store_true")
+    sub.add_parser("nat").add_subparsers(dest="action", required=True).add_parser("status")
     fw = sub.add_parser("firewall").add_subparsers(dest="action", required=True)
     fw.add_parser("apply")
     fw.add_parser("confirm")
@@ -215,6 +216,15 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
     if a.cmd == "restore":
         _require_root()
         print(mgr.restore_archive(a.archive, who["admin"], who["source"], a.allow_restart))
+        return 0
+
+    if a.cmd == "nat":
+        cfg = load(paths.config)
+        print(health.format_report([health.check_nat(cfg), health.check_conntrack()]))
+        for p in (cfg.nat.pools if cfg.nat else []):
+            print(f"pool {p.name:<12} {', '.join(map(str, p.subscribers))} -> {p.snat_target()}")
+        for c in firewall.nat_counters():
+            print(f"counter {c['pool']:<10} packets={c['packets']} bytes={c['bytes']}")
         return 0
 
     if a.cmd == "firewall":

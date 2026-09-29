@@ -112,6 +112,18 @@ def check_conntrack() -> Check:
     return _ok("conntrack", count < 0.9 * limit, f"{count}/{limit}")
 
 
+def check_nat(cfg: BngConfig) -> Check:
+    if not cfg.nat:
+        return Check("NAT", "SKIP", "no nat section")
+    try:
+        fwd = Path("/proc/sys/net/ipv4/ip_forward").read_text().strip() == "1"
+    except OSError:
+        fwd = False
+    loaded = _run("nft", "list", "table", "ip", "bng_nat").returncode == 0
+    ok = fwd and loaded
+    return _ok("NAT", ok, "" if ok else f"ip_forward={int(fwd)}, bng_nat {'loaded' if loaded else 'missing'}")
+
+
 def critical_failures(cfg: BngConfig, accel: AccelCmd) -> list[str]:
     """Checks that gate a config apply; anything failing here triggers rollback."""
     checks = [check_service(), check_cli(accel), check_pppoe(cfg, accel)]
@@ -122,7 +134,7 @@ def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
-        Check("NAT", "SKIP", "Phase 2"), Check("CAKE", "SKIP", "Phase 3"),
+        check_nat(cfg), Check("CAKE", "SKIP", "Phase 3"),
         Check("API", "SKIP", "Phase 5"), Check("Database", "SKIP", "Phase 5"),
     ]
 
