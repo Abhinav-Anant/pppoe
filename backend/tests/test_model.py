@@ -65,3 +65,36 @@ def test_radius_mode_needs_radius_section(base_cfg):
 def test_dae_sources_default_to_servers(radius_cfg):
     cfg = BngConfig.model_validate(radius_cfg)
     assert [str(n) for n in cfg.radius.dae_sources()] == ["192.0.2.10/32"]
+
+
+NAT = {"pools": [{"name": "lab", "subscribers": ["100.64.0.0/24"], "public_start": "192.0.2.1"}]}
+
+
+def test_nat_defaults_and_target(base_cfg):
+    base_cfg["nat"] = NAT
+    cfg = BngConfig.model_validate(base_cfg)
+    assert cfg.nat.mss_clamp and cfg.nat.pools[0].snat_target() == "192.0.2.1:1024-65535"
+    assert [str(n) for n in cfg.subscriber_networks()] == ["100.64.0.0/24"]
+
+
+def test_nat_range_target(base_cfg):
+    base_cfg["nat"] = {"pools": [dict(NAT["pools"][0], public_end="192.0.2.8", port_min=2000, port_max=3000)]}
+    assert BngConfig.model_validate(base_cfg).nat.pools[0].snat_target() == "192.0.2.1-192.0.2.8:2000-3000"
+
+
+@pytest.mark.parametrize("patch, msg", [
+    ({"public_end": "192.0.1.1"}, "public_end"),
+    ({"port_min": 5000, "port_max": 4000}, "port"),
+    ({"public_start": "100.64.0.9"}, "inside subscriber pool"),
+])
+def test_nat_pool_rejected(base_cfg, patch, msg):
+    base_cfg["nat"] = {"pools": [dict(NAT["pools"][0], **patch)]}
+    with pytest.raises(ValidationError, match=msg):
+        BngConfig.model_validate(base_cfg)
+
+
+def test_nat_overlapping_subscribers_rejected(base_cfg):
+    p = NAT["pools"][0]
+    base_cfg["nat"] = {"pools": [p, dict(p, name="b", subscribers=["100.64.0.128/25"])]}
+    with pytest.raises(ValidationError, match="overlap"):
+        BngConfig.model_validate(base_cfg)

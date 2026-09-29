@@ -20,6 +20,11 @@ ip_pools:
 dns: [8.8.8.8, 1.1.1.1]
 shaper:
   attr: Filter-Id        # attribute Jaze sends the rate in; confirm with Jaze
+nat:
+  pools:
+    - name: lab
+      subscribers: [100.64.0.0/24]
+      public_start: 192.0.2.1   # install.sh sets this to the uplink IPv4
 # radius:                # required when aaa: radius
 #   nas_identifier: bng01
 #   nas_ip_address: 43.229.72.90

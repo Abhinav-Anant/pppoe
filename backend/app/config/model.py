@@ -109,6 +109,44 @@ class Shaper(Strict):
     up_limiter: Literal["police", "htb"] = "police"
 
 
+class NatPool(Strict):
+    name: str = Field(pattern=TOKEN)
+    subscribers: list[IPv4Network] = Field(min_length=1)
+    public_start: IPv4Address
+    public_end: IPv4Address | None = None
+    port_min: int = Field(default=1024, ge=1, le=65535)
+    port_max: int = Field(default=65535, ge=1, le=65535)
+
+    @model_validator(mode="after")
+    def _ranges(self) -> NatPool:
+        if self.public_end is not None and self.public_end < self.public_start:
+            raise ValueError(f"nat pool {self.name!r}: public_end is below public_start")
+        if self.port_min > self.port_max:
+            raise ValueError(f"nat pool {self.name!r}: port_min is above port_max")
+        return self
+
+    def snat_target(self) -> str:
+        end = self.public_end if self.public_end not in (None, self.public_start) else None
+        ips = f"{self.public_start}-{end}" if end else str(self.public_start)
+        return f"{ips}:{self.port_min}-{self.port_max}"
+
+
+class Nat(Strict):
+    pools: list[NatPool] = Field(min_length=1)
+    mss_clamp: bool = True
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Nat:
+        names = [p.name for p in self.pools]
+        if len(set(names)) != len(names):
+            raise ValueError("nat pool names must be unique")
+        nets = [(p.name, n) for p in self.pools for n in p.subscribers]
+        for (pa, a), (pb, b) in combinations(nets, 2):
+            if a.overlaps(b):
+                raise ValueError(f"nat subscriber networks {a} ({pa}) and {b} ({pb}) overlap")
+        return self
+
+
 class BngConfig(Strict):
     node: str = Field(pattern=TOKEN)
     aaa: Literal["radius", "lab"]
@@ -120,12 +158,24 @@ class BngConfig(Strict):
     dns: list[IPv4Address] = Field(default_factory=list, max_length=2)
     radius: Radius | None = None
     shaper: Shaper | None = Shaper()
+    nat: Nat | None = None
 
     @model_validator(mode="after")
     def _aaa(self) -> BngConfig:
         if self.aaa == "radius" and self.radius is None:
             raise ValueError("aaa=radius requires a radius section")
+        if self.nat:
+            pool_nets = [p.network for p in self.ip_pools.pools]
+            for p in self.nat.pools:
+                for addr in filter(None, (p.public_start, p.public_end)):
+                    if any(addr in n for n in pool_nets + p.subscribers):
+                        raise ValueError(f"nat pool {p.name!r}: public address {addr} is inside subscriber pool")
         return self
+
+    def subscriber_networks(self) -> list[IPv4Network]:
+        if self.nat:
+            return [n for p in self.nat.pools for n in p.subscribers]
+        return [p.network for p in self.ip_pools.pools]
 
 
 def load(path: Path | str) -> BngConfig:
