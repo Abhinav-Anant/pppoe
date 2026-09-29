@@ -8,7 +8,10 @@
 # postinst starts easywall-core (postinst keeps an existing file). easywall only
 # enforces after its first confirmed apply, so installing it changes no rules.
 set -euo pipefail
-EASYWALL_VERSION=${EASYWALL_VERSION:-2.25.0}
+# Pinned together. The release's checksums.txt covers only the tarballs; this is
+# GitHub's release-asset digest for the .deb (API field "digest"), v2.25.0.
+EASYWALL_VERSION=2.25.0
+EASYWALL_SHA256=f4b1ea1310e7809a0d0b8f5ad46c30cb428d06d086f598b54af14ebce244f0c1
 BASE="https://github.com/jp1337/easywall/releases/download/v${EASYWALL_VERSION}"
 DEB=easywall_amd64.deb
 
@@ -17,10 +20,8 @@ DEB=easywall_amd64.deb
 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 curl -fsSL -o "$T/$DEB" "$BASE/$DEB"
-curl -fsSL -o "$T/checksums.txt" "$BASE/checksums.txt"
-WANT=$(awk -v f="$DEB" '$2 == f || $2 == "*"f {print $1}' "$T/checksums.txt")
 GOT=$(sha256sum "$T/$DEB" | awk '{print $1}')
-[ -n "$WANT" ] && [ "$WANT" = "$GOT" ] || { echo "checksum mismatch for $DEB (want ${WANT:-none}, got $GOT)" >&2; exit 1; }
+[ "$GOT" = "$EASYWALL_SHA256" ] || { echo "checksum mismatch for $DEB (want $EASYWALL_SHA256, got $GOT)" >&2; exit 1; }
 echo "verified $DEB v$EASYWALL_VERSION sha256 $GOT"
 
 if [ ! -f /etc/easywall/easywall.toml ]; then
