@@ -24,7 +24,7 @@ If the management plane is stopped or removed, established PPPoE sessions keep f
 | 1 | ACCEL-PPP, PPPoE, RADIUS config, IP pools, per-session shaping, safe config apply, health, CLI | done in lab; Jaze verification open |
 | 2 | nftables CGNAT, forward filter, MSS clamp, conntrack | done in lab (`docs/phase2-results.md`); NAT logging designed |
 | 3 | CAKE | demonstrated (`docs/phase3-results.md`), then **removed** at the operator's request |
-| 4 | Gold/Silver/Bronze tiers via nft marks | pending |
+| 4 | Priority = plan rate from RADIUS (per-session shaper), rate guard; easywall host firewall | done in lab (`docs/rate-limits.md`, `docs/easywall.md`); Jaze attribute + easywall hand-over open |
 | 5 | FastAPI management API | pending |
 | 6 | Web GUI | pending |
 | 7 | Multi-BNG | pending |

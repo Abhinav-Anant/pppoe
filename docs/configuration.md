@@ -36,6 +36,9 @@ Unknown keys are rejected. Every string that reaches accel-ppp.conf is restricte
 | `radius.blast_protection` | bool, `true` | `[radius] blast-protection` |
 | `shaper.attr` / `vendor` | `Filter-Id` / none | `[shaper] attr` / `vendor` |
 | `shaper.down_limiter` / `up_limiter` | `tbf` / `police` | `[shaper]` |
+| `shaper.max_rate_mbit` | Mbit, none | health check only: FAIL if an applied rate exceeds it |
+| `shaper.require_rate` | bool, `false` | health check only: FAIL if an active session has no rate |
+| `firewall.host_input` | `bng` \| `easywall`, `bng` | `easywall`: no bng input chain (see `docs/easywall.md`) |
 
 ### NAT (`nat:`)
 
