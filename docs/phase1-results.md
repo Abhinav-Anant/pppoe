@@ -40,6 +40,18 @@ Nothing here measures production throughput or scale.
 3. `show sessions` output uses CRLF and padded cells; state is `start` briefly before `active`. A captured fixture pins the parser to real 1.14.0 output.
 4. Audit `source` shows `cli:local` for CLI actions under `sudo` (sudo drops `SSH_CLIENT`). The Phase 5 API will record the real client IP.
 
+## PPPoE on VLAN 4044 (ens18)
+
+- `ens18.4044` (802.1Q id 4044, L2 only) created persistently in `/etc/netplan/60-bng-vlan4044.yaml`
+  (cloud-init file untouched), applied under a 120 s auto-revert timer, confirmed from a new SSH session.
+- First attempt to add it via reload: **not served**. The health gate rolled back. Cause: 1.14.0 reads
+  `[pppoe] interface=` only at start. Fixed: apply now adds new interfaces live with
+  `accel-cmd pppoe interface add`.
+- Config version 3: `pppoe interface show` lists `bnglab0` and `ens18.4044`, both `active`; accel-pppd
+  not restarted (up since 13:58:47); lab test re-run PASS.
+- **Not verified:** a real subscriber session on VLAN 4044 — needs a CPE/OLT sending tagged 4044 frames
+  to this VM (the Proxmox bridge / upstream switch must carry VLAN 4044 to `ens18`).
+
 ## Open items (not verified — depend on external systems)
 
 1. **Jaze RADIUS**: add bng01 as NAS in Jaze, set `aaa: radius` + `radius:` section, put the shared secret in `/etc/bng-platform/secrets/radius.secret` (root, 0600), then:
