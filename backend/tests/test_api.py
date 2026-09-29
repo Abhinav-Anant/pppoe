@@ -238,6 +238,9 @@ def test_config_yaml_keeps_comments(api):
     r = api.post("/api/config/apply", json={"yaml": text})
     assert r.status_code == 200, r.text
     assert "# resolver for subscribers" in api.node.paths.config.read_text()
+    commented = text + "# only a comment\n"
+    assert api.post("/api/config/apply", json={"yaml": commented}).json()["result"] == "applied as version 2"
+    assert api.post("/api/config/apply", json={"yaml": commented}).json()["result"] == "no changes"
     assert api.post("/api/config/apply", json={"yaml": "- not a mapping"}).status_code == 422
     assert api.post("/api/config/apply", json={}).status_code == 422
 

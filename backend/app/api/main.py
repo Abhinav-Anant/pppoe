@@ -780,7 +780,9 @@ def _candidate(node: Node, data: dict, text: str | None = None):
 def _apply(node: Node, db: Session, p: Principal, data: dict, allow_restart: bool, text: str | None = None) -> dict:
     cfg = _model(data)
     changed = _changed(node, cfg)
-    if not changed:  # same settings; don't rewrite the operator's YAML (comments) into a new version
+    # same settings: a JSON candidate would only strip the operator's comments, so skip it;
+    # YAML text that differs (e.g. comments edited) is saved as a new version
+    if not changed and (text is None or text == node.paths.config.read_text(encoding="utf-8")):
         return {"result": "no changes", "changed": []}
     missing = _needed(changed) - p.permissions
     if missing:

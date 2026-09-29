@@ -107,6 +107,15 @@ if [ ! -s "$DBURL" ]; then
 fi
 bngctl db upgrade
 
+log "Web GUI"
+if [ -f "$SRC/frontend/dist/index.html" ]; then
+  rm -rf "$PREFIX/web.new" && cp -r "$SRC/frontend/dist" "$PREFIX/web.new"
+  rm -rf "$PREFIX/web" && mv "$PREFIX/web.new" "$PREFIX/web"
+  echo "  installed $PREFIX/web (served by bng-api)"
+else
+  echo "  no frontend/dist in $SRC - API only"
+fi
+
 log "bng-api"
 install -m 0644 "$SRC/system/systemd/bng-api.service" /etc/systemd/system/
 systemctl daemon-reload
@@ -123,5 +132,5 @@ Next:
   sudo bngctl config apply                  # first start of accel-ppp
   sudo bngctl firewall apply                # then confirm from a NEW ssh session
   sudo bngctl admin create <name> --role super_admin   # first API administrator
-  ssh -L 8080:127.0.0.1:8080 <node>         # API docs: http://localhost:8080/api/docs
+  ssh -L 8080:127.0.0.1:8080 <node>         # GUI: http://localhost:8080   API docs: /api/docs
 EOF
