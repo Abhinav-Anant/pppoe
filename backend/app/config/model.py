@@ -187,6 +187,13 @@ class Qos(Strict):
     cake: Cake
 
 
+class Firewall(Strict):
+    """bng: bng-platform's inet bng_filter input chain filters host traffic.
+    easywall: easywall (github.com/jp1337/easywall) owns host input; bng_filter keeps
+    only the subscriber forward chain. easywall must run with routing.mode = "open"."""
+    host_input: Literal["bng", "easywall"] = "bng"
+
+
 class BngConfig(Strict):
     node: str = Field(pattern=TOKEN)
     aaa: Literal["radius", "lab"]
@@ -200,6 +207,7 @@ class BngConfig(Strict):
     shaper: Shaper | None = Shaper()
     nat: Nat | None = None
     qos: Qos | None = None
+    firewall: Firewall = Firewall()
 
     @model_validator(mode="after")
     def _aaa(self) -> BngConfig:

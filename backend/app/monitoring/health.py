@@ -6,6 +6,7 @@ import re
 import socket
 import subprocess
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -136,6 +137,25 @@ def check_cake(cfg: BngConfig) -> Check:
     return _ok("CAKE", not missing, f"missing: {', '.join(missing)}" if missing else detail)
 
 
+EASYWALL_TOML = Path("/etc/easywall/easywall.toml")
+
+
+def check_easywall() -> Check:
+    """easywall's forward chain is a base chain: anything but routing.mode = "open"
+    lets it drop subscriber traffic that bng_filter accepted (a drop at a hook is final)."""
+    try:
+        with open(EASYWALL_TOML, "rb") as f:
+            mode = tomllib.load(f).get("routing", {}).get("mode", "closed")
+    except FileNotFoundError:
+        return Check("easywall", "SKIP", "not installed")
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        return Check("easywall", "FAIL", f"cannot read {EASYWALL_TOML}: {e}")
+    if mode != "open":
+        return Check("easywall", "FAIL", f'routing.mode = "{mode}" would drop subscriber traffic; set "open"')
+    active = _run("systemctl", "is-active", "--quiet", "easywall-core.service").returncode == 0
+    return _ok("easywall", active, 'core active, routing.mode = "open"' if active else "easywall-core not active")
+
+
 def critical_failures(cfg: BngConfig, accel: AccelCmd) -> list[str]:
     """Checks that gate a config apply; anything failing here triggers rollback."""
     checks = [check_service(), check_cli(accel), check_pppoe(cfg, accel)]
@@ -146,7 +166,7 @@ def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
-        check_nat(cfg), check_cake(cfg),
+        check_nat(cfg), check_cake(cfg), check_easywall(),
         Check("API", "SKIP", "Phase 5"), Check("Database", "SKIP", "Phase 5"),
     ]
 
