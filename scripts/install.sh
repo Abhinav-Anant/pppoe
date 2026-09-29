@@ -52,9 +52,10 @@ fi
 /usr/local/sbin/accel-pppd -V
 
 log "systemd"
-install -m 0644 "$SRC/system/systemd/accel-ppp.service" /etc/systemd/system/accel-ppp.service
+install -m 0644 "$SRC/system/systemd/accel-ppp.service" "$SRC/system/systemd/bng-qos.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable accel-ppp.service   # started by the first 'bngctl config apply'
+systemctl enable bng-qos.service     # runs /etc/bng-platform/tc/cake.sh once confirmed
 
 log "bngctl"
 python3 -m venv "$PREFIX/venv"
@@ -64,7 +65,7 @@ python3 -m venv "$PREFIX/venv"
 ln -sf "$PREFIX/venv/bin/bngctl" /usr/local/sbin/bngctl
 
 log "Configuration"
-install -d -m 0755 "$ETC" "$ETC/accel-ppp" "$ETC/nftables"
+install -d -m 0755 "$ETC" "$ETC/accel-ppp" "$ETC/nftables" "$ETC/tc"
 install -d -m 0700 "$ETC/secrets" "$STATE"
 if [ ! -f "$ETC/config.yaml" ]; then
   UPLINK=$(ip route show default | awk '{print $5; exit}')

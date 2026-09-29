@@ -14,11 +14,12 @@ import subprocess
 from pathlib import Path
 
 from app.config.model import BngConfig
+from app.networking import guard
+from app.networking.guard import CONFIRM_SECONDS
 
 RULES = Path("/etc/bng-platform/nftables/filter.nft")
 PENDING = Path("/var/lib/bng-platform/filter.nft.pending")
 REVERT_UNIT = "bng-fw-revert"
-CONFIRM_SECONDS = 120
 REVERT_SCRIPT = (f"nft delete table inet bng_filter; nft delete table ip bng_nat; "
                  f"if [ -f {RULES} ]; then nft -f {RULES}; fi; rm -f {PENDING}")
 
@@ -101,30 +102,22 @@ def _run(*argv: str) -> None:
         raise RuntimeError(f"{' '.join(argv[:2])}: {p.stderr.strip()}")
 
 
-def _disarm() -> None:
-    subprocess.run(["systemctl", "stop", f"{REVERT_UNIT}.timer"], capture_output=True, timeout=30)
-    subprocess.run(["systemctl", "reset-failed", f"{REVERT_UNIT}.service"], capture_output=True, timeout=30)
-
-
 def apply(cfg: BngConfig) -> None:
     PENDING.parent.mkdir(parents=True, exist_ok=True)
     PENDING.write_text(render(cfg))
     _run("nft", "-c", "-f", str(PENDING))
-    _disarm()
-    # default timer AccuracySec is 1 min, which let the revert fire up to 60 s late on bng01
-    _run("systemd-run", f"--unit={REVERT_UNIT}", f"--on-active={CONFIRM_SECONDS}",
-         "--timer-property=AccuracySec=1s", "/bin/sh", "-c", REVERT_SCRIPT)
+    guard.arm(REVERT_UNIT, REVERT_SCRIPT)
     try:
         _run("nft", "-f", str(PENDING))
     except RuntimeError:
-        _disarm()
+        guard.disarm(REVERT_UNIT)
         raise
 
 
 def confirm() -> None:
     if not PENDING.exists():
         raise RuntimeError("no pending firewall change (already confirmed, or it was reverted)")
-    _disarm()
+    guard.disarm(REVERT_UNIT)
     RULES.parent.mkdir(parents=True, exist_ok=True)
     RULES.write_text(PENDING.read_text())
     PENDING.unlink()

@@ -17,8 +17,9 @@ from app.accel.cmd import SID_RE, AccelCmd, AccelService
 from app.config.manager import ApplyError, ConfigManager, Paths
 from app.config.model import load
 from app.monitoring import health
-from app.networking import firewall
+from app.networking import firewall, guard
 from app.networking.interfaces import list_interfaces
+from app.qos import cake
 from app.radius import probe
 
 SEARCH_RE = re.compile(r"^[A-Za-z0-9_.@:\-]{1,64}$")
@@ -84,6 +85,9 @@ def _parser() -> argparse.ArgumentParser:
     x.add_argument("archive", type=Path)
     x.add_argument("--allow-restart", action="store_true")
     sub.add_parser("nat").add_subparsers(dest="action", required=True).add_parser("status")
+    q = sub.add_parser("qos").add_subparsers(dest="action", required=True)
+    for name in ("status", "capabilities", "apply", "confirm"):
+        q.add_parser(name)
     fw = sub.add_parser("firewall").add_subparsers(dest="action", required=True)
     fw.add_parser("apply")
     fw.add_parser("confirm")
@@ -227,11 +231,39 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
             print(f"counter {c['pool']:<10} packets={c['packets']} bytes={c['bytes']}")
         return 0
 
+    if a.cmd == "qos":
+        if a.action == "capabilities":
+            caps = cake.detect()
+            print(f"cake: {'yes' if caps['cake'] else 'NO'}   cake_mq: {'yes' if caps['cake_mq'] else 'no'}")
+            print("options:", " ".join(sorted(caps["options"])))
+            return 0
+        cfg = load(paths.config)
+        if a.action == "status":
+            for direction, s in cake.status(cfg).items():
+                print(direction)
+                if not s:
+                    print("    no CAKE qdisc")
+                    continue
+                print(f"    bandwidth {s['bandwidth_mbit']:.0f} Mbit/s  sent {s['bytes']} B / {s['packets']} pkts  "
+                      f"drops {s['drops']}  ecn-marks {s['ecn_mark']}  ack-drops {s['ack_drops']}  "
+                      f"backlog {s['backlog']} B  delay avg/peak {s['avg_delay_us']}/{s['peak_delay_us']} us")
+            return 0
+        _require_root()
+        if a.action == "apply":
+            cake.apply(cfg)
+            print(f"QoS loaded. It reverts in {guard.CONFIRM_SECONDS}s unless you open a NEW ssh "
+                  "session and run: sudo bngctl qos confirm")
+        else:
+            cake.confirm()
+            print("QoS confirmed; applied at boot by bng-qos.service")
+        mgr.audit(**who, action=f"qos_{a.action}", result="ok")
+        return 0
+
     if a.cmd == "firewall":
         _require_root()
         if a.action == "apply":
             firewall.apply(load(paths.config))
-            print(f"firewall loaded. It reverts in {firewall.CONFIRM_SECONDS}s unless you open a NEW ssh "
+            print(f"firewall loaded. It reverts in {guard.CONFIRM_SECONDS}s unless you open a NEW ssh "
                   "session and run: sudo bngctl firewall confirm")
         else:
             firewall.confirm()

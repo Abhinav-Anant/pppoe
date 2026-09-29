@@ -10,12 +10,19 @@ No per-subscriber classes: per-session limits live in accel-ppp's shaper.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+from pathlib import Path
 
 from app.config.model import BngConfig
+from app.networking import guard
 
 IFB = "bngifb0"
+SCRIPT = Path("/etc/bng-platform/tc/cake.sh")          # run at boot by bng-qos.service
+PENDING = Path("/var/lib/bng-platform/cake.sh.pending")
+REVERT_UNIT = "bng-qos-revert"
 KNOWN_OPTIONS = {
     "besteffort", "diffserv3", "diffserv4", "diffserv8",
     "flowblind", "srchost", "dsthost", "hosts", "flows", "dual-srchost", "dual-dsthost", "triple-isolate",
@@ -92,3 +99,61 @@ def render(cfg: BngConfig, caps: dict) -> str:
             _qdisc(up, c.upload, c, False, caps),
         ]
     return "\n".join(out) + "\n"
+
+
+def _sh(path: Path) -> None:
+    p = subprocess.run(["/bin/sh", str(path)], capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        raise RuntimeError(f"{path.name}: {p.stderr.strip()}")
+
+
+def apply(cfg: BngConfig) -> None:
+    """Run the new script under a revert timer: an ingress redirect on the uplink
+    can black-hole management traffic, so confirm from a fresh SSH session."""
+    text = render(cfg, detect())
+    PENDING.parent.mkdir(parents=True, exist_ok=True)
+    PENDING.write_text(text)
+    up, ifb = cfg.uplink, IFB
+    revert = (f"if [ -f {SCRIPT} ]; then /bin/sh {SCRIPT}; else tc qdisc del dev {up} root; "
+              f"tc qdisc del dev {up} ingress; ip link del {ifb}; fi; rm -f {PENDING}")
+    guard.arm(REVERT_UNIT, revert)
+    try:
+        _sh(PENDING)
+    except RuntimeError:
+        subprocess.run(["/bin/sh", "-c", revert], capture_output=True, timeout=60)
+        guard.disarm(REVERT_UNIT)
+        raise
+
+
+def confirm() -> None:
+    if not PENDING.exists():
+        raise RuntimeError("no pending QoS change (already confirmed, or it was reverted)")
+    guard.disarm(REVERT_UNIT)
+    SCRIPT.parent.mkdir(parents=True, exist_ok=True)
+    SCRIPT.write_text(PENDING.read_text())
+    os.chmod(SCRIPT, 0o755)
+    PENDING.unlink()
+
+
+def parse_cake_json(text: str) -> dict | None:
+    """Root CAKE qdisc stats from `tc -s -j qdisc show dev X` (bandwidth option is bytes/s)."""
+    for q in json.loads(text or "[]"):
+        if q.get("kind") in ("cake", "cake_mq") and q.get("root"):
+            tins = q.get("tins", [])
+            return {
+                "bandwidth_mbit": q.get("options", {}).get("bandwidth", 0) * 8 / 1e6,
+                **{k: q.get(k, 0) for k in ("bytes", "packets", "drops", "overlimits", "backlog")},
+                "ecn_mark": sum(t.get("ecn_mark", 0) for t in tins),
+                "ack_drops": sum(t.get("ack_drops", 0) for t in tins),
+                "peak_delay_us": max((t.get("peak_delay_us", 0) for t in tins), default=0),
+                "avg_delay_us": max((t.get("avg_delay_us", 0) for t in tins), default=0),
+            }
+    return None
+
+
+def status(cfg: BngConfig) -> dict:
+    def show(dev: str) -> dict | None:
+        p = subprocess.run(["tc", "-s", "-j", "qdisc", "show", "dev", dev], capture_output=True, text=True, timeout=10)
+        return parse_cake_json(p.stdout) if p.returncode == 0 else None
+    return {"upload (Customer->Internet, egress " + cfg.uplink + ")": show(cfg.uplink),
+            "download (Internet->Customer, ingress " + cfg.uplink + " via " + IFB + ")": show(IFB)}

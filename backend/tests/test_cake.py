@@ -88,3 +88,28 @@ def test_unsupported_option_refused(base_cfg):
     caps = dict(CAPS, options=set(CAPS["options"]) - {"dual-dsthost"})
     with pytest.raises(ValueError, match="dual-dsthost"):
         cake.render(cfg(base_cfg), caps)
+
+
+def _q(**over):
+    q = {"kind": "cake", "root": True, "options": {"bandwidth": 12500000},
+         "bytes": 1000, "packets": 10, "drops": 2, "overlimits": 5, "backlog": 0,
+         "tins": [{"ecn_mark": 3, "ack_drops": 1, "peak_delay_us": 900, "avg_delay_us": 120},
+                  {"ecn_mark": 1, "ack_drops": 0, "peak_delay_us": 400, "avg_delay_us": 300}]}
+    q.update(over)
+    return q
+
+
+def test_parse_cake_json():
+    s = cake.parse_cake_json(json.dumps([{"kind": "ingress", "root": False}, _q()]))
+    assert s == {"bandwidth_mbit": 100.0, "bytes": 1000, "packets": 10, "drops": 2, "overlimits": 5,
+                 "backlog": 0, "ecn_mark": 4, "ack_drops": 1, "peak_delay_us": 900, "avg_delay_us": 300}
+
+
+def test_parse_cake_json_absent():
+    assert cake.parse_cake_json(json.dumps([{"kind": "fq_codel", "root": True}])) is None
+    assert cake.parse_cake_json("") is None
+
+
+def test_health_cake_skip_without_qos(base_cfg):
+    from app.monitoring import health
+    assert health.check_cake(BngConfig.model_validate(base_cfg)).status == "SKIP"
