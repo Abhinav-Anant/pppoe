@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from ipaddress import IPv4Network
 
 from app.config.model import BngConfig
 
@@ -29,6 +30,19 @@ class Rendered:
 
 def _b(v: bool) -> str:
     return "1" if v else "0"
+
+
+def _host_ranges(net: IPv4Network) -> list[str]:
+    """accel-ppp 1.14.0 (ippool.c) hands out every address of a CIDR pool,
+    including x.x.x.0 and x.x.x.255, which some CPEs reject. Emit per-/24
+    `x.x.x.a-b` ranges without them; same-name lines append to one pool."""
+    out = []
+    for s in (net.subnets(new_prefix=24) if net.prefixlen < 24 else [net]):
+        lo = max(int(s.network_address) & 255, 1)
+        hi = min(int(s.broadcast_address) & 255, 254)
+        if lo <= hi:
+            out.append(f"{str(s.network_address).rsplit('.', 1)[0]}.{lo}-{hi}")
+    return out
 
 
 def render(cfg: BngConfig, radius_secret: str | None) -> Rendered:
@@ -85,7 +99,8 @@ def render(cfg: BngConfig, radius_secret: str | None) -> Rendered:
 
     ip = cfg.ip_pools
     section("ip-pool", f"gw-ip-address={ip.gw_ip_address}", "attr=Framed-Pool",
-            *(f"{pl.network},name={pl.name}" + (f",next={pl.next}" if pl.next else "") for pl in ip.pools))
+            *(f"{rng},name={pl.name}" + (f",next={pl.next}" if pl.next else "")
+              for pl in ip.pools for rng in _host_ranges(pl.network)))
     if cfg.shaper:
         s = cfg.shaper
         section("shaper", f"attr={s.attr}", f"vendor={s.vendor}" if s.vendor else None,

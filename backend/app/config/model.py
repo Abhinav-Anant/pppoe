@@ -66,6 +66,8 @@ class IpPools(Strict):
         for p in self.pools:
             if p.next and p.next not in names:
                 raise ValueError(f"pool {p.name!r}: next pool {p.next!r} is not defined")
+            if p.network.prefixlen == 32 and int(p.network.network_address) & 255 in (0, 255):
+                raise ValueError(f"pool {p.name!r} has no usable address (.0/.255 are skipped)")
             if self.gw_ip_address in p.network:
                 raise ValueError(f"gw_ip_address is inside pool {p.name!r}")
         for a, b in combinations(self.pools, 2):

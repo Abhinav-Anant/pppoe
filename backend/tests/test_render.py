@@ -13,8 +13,22 @@ def test_lab_render_is_valid(base_cfg):
     assert r.secrets == ""
     assert "chap-secrets" in r.main.split("[core]")[0]      # module loaded
     assert "interface=veth0" in r.main
-    assert "100.64.0.0/24,name=p" in r.main
+    assert "100.64.0.1-254,name=p" in r.main
     assert "tcp=127.0.0.1:2001" in r.main
+
+
+@pytest.mark.parametrize("network, lines", [
+    ("100.64.0.0/23", ["100.64.0.1-254,name=p", "100.64.1.1-254,name=p"]),
+    ("100.64.0.0/30", ["100.64.0.1-3,name=p"]),
+    ("100.64.0.252/30", ["100.64.0.252-254,name=p"]),
+    ("100.64.0.7/32", ["100.64.0.7-7,name=p"]),
+])
+def test_pools_skip_dot0_and_dot255(base_cfg, network, lines):
+    # accel-ppp 1.14.0 ippool.c hands out every CIDR address incl. .0/.255
+    base_cfg["ip_pools"]["pools"][0]["network"] = network
+    r = render(BngConfig.model_validate(base_cfg), None)
+    assert [l for l in r.main.splitlines() if l.startswith("100.64.")] == lines
+    assert validate_text(r.main) == []
 
 
 def test_radius_secret_only_in_include(radius_cfg):

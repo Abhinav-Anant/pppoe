@@ -1,1 +1,2 @@
 * text=auto eol=lf
+backend/tests/fixtures/*.txt -text

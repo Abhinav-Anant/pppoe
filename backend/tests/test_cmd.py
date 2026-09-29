@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.accel.cmd import SESSION_COLUMNS, AccelCmd, AccelError, parse_sessions
@@ -43,3 +45,17 @@ def test_arguments_with_whitespace_refused():
 def test_missing_binary_is_accel_error():
     with pytest.raises(AccelError):
         AccelCmd(binary="/nonexistent/accel-cmd").version()
+
+
+
+REAL = Path(__file__).parent / "fixtures" / "show_sessions_1.14.0.txt"
+
+
+def test_parses_real_1_14_0_output():
+    # captured on bng01 (accel-ppp 1.14.0): CRLF line endings, padded cells
+    rows = parse_sessions(REAL.read_text(), SESSION_COLUMNS)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["username"] == "labuser" and r["ifname"] == "ppp0" and r["ip"].startswith("100.64.0.")
+    assert r["state"] in ("start", "active") and r["rx-bytes-raw"].isdigit()
+    assert r["rate-limit"] == "20480/20480"

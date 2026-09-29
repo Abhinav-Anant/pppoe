@@ -44,6 +44,12 @@ def test_gateway_inside_pool_rejected(base_cfg):
         BngConfig.model_validate(base_cfg)
 
 
+def test_pool_without_usable_address_rejected(base_cfg):
+    base_cfg["ip_pools"]["pools"][0]["network"] = "100.64.0.255/32"
+    with pytest.raises(ValidationError, match="usable"):
+        BngConfig.model_validate(base_cfg)
+
+
 def test_unknown_next_pool_rejected(base_cfg):
     base_cfg["ip_pools"]["pools"][0]["next"] = "nope"
     with pytest.raises(ValidationError, match="next pool"):
