@@ -11,7 +11,7 @@ packet path. External AAA is Jaze RADIUS; no RADIUS server is deployed here.
    ACCEL          nft           tc
      +------------+-------------+
                   |
-              DATA PLANE          PPPoE / NAT / CAKE / QoS  -> Internet
+              DATA PLANE          PPPoE / per-session shaping / CGNAT  -> Internet
 ```
 
 If the management plane is stopped or removed, established PPPoE sessions keep forwarding
