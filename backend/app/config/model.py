@@ -103,10 +103,15 @@ class Radius(Strict):
 
 
 class Shaper(Strict):
+    """Per-session rate from RADIUS, enforced by accel-ppp on each pppN.
+    max_rate_mbit / require_rate only feed the 'Rate limits' health check: accel-ppp
+    1.14.0 reads a 'G' suffix as x10^7 kbit (1G -> 10 Gbit, measured on bng01)."""
     attr: str = Field(default="Filter-Id", pattern=TOKEN)
     vendor: str | None = Field(default=None, pattern=TOKEN)
     down_limiter: Literal["tbf", "htb", "clsact"] = "tbf"
     up_limiter: Literal["police", "htb"] = "police"
+    max_rate_mbit: int | None = Field(default=None, ge=1, le=400_000)
+    require_rate: bool = False
 
 
 class NatPool(Strict):

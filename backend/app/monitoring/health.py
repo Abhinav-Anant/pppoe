@@ -125,6 +125,31 @@ def check_nat(cfg: BngConfig) -> Check:
     return _ok("NAT", ok, "" if ok else f"ip_forward={int(fwd)}, bng_nat {'loaded' if loaded else 'missing'}")
 
 
+def check_rates(cfg: BngConfig, accel) -> Check:
+    """Rates RADIUS dictated, as accel-ppp actually applied them (kbit/s)."""
+    s = cfg.shaper
+    if not s:
+        return Check("Rate limits", "SKIP", "no shaper configured")
+    try:
+        rows = accel.sessions()
+    except AccelError as e:
+        return Check("Rate limits", "FAIL", str(e))
+    over, missing = [], []
+    for r in rows:
+        down, _, up = r["rate-limit"].partition("/")
+        if not down.isdigit():
+            missing.append(r["username"])
+        elif s.max_rate_mbit and max(int(down), int(up or 0)) > s.max_rate_mbit * 1000:
+            over.append(f"{r['username']} {r['rate-limit']}")
+    problems = []
+    if over:
+        problems.append(f"{len(over)} above {s.max_rate_mbit} Mbit ({', '.join(over[:5])}); "
+                        "a 'G' rate suffix is read x10 by accel-ppp 1.14.0 - send M")
+    if missing and s.require_rate:
+        problems.append(f"{len(missing)} without a RADIUS rate ({', '.join(missing[:5])})")
+    return _ok("Rate limits", not problems, "; ".join(problems) or f"{len(rows)} sessions checked")
+
+
 EASYWALL_TOML = Path("/etc/easywall/easywall.toml")
 
 
@@ -154,7 +179,7 @@ def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
-        check_nat(cfg), check_easywall(),
+        check_rates(cfg, accel), check_nat(cfg), check_easywall(),
         Check("API", "SKIP", "Phase 5"), Check("Database", "SKIP", "Phase 5"),
     ]
 
