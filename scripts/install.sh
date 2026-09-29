@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bng-platform installer (Phase 1). Idempotent. Never edits netplan or NIC config.
+# bng-platform installer. Idempotent. Never edits netplan or NIC config.
 set -euo pipefail
 ACCEL_PPP_VERSION=1.14.0
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -32,7 +32,7 @@ log "Packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q build-essential cmake git libssl-dev libpcre2-dev python3-venv \
-  nftables iproute2 ethtool ppp iperf3 tcpdump conntrack curl
+  nftables iproute2 ethtool ppp iperf3 tcpdump conntrack curl postgresql openssl
 
 log "ACCEL-PPP $ACCEL_PPP_VERSION"
 if /usr/local/sbin/accel-pppd -V 2>/dev/null | grep -qx "accel-ppp $ACCEL_PPP_VERSION"; then
@@ -59,7 +59,7 @@ systemctl enable accel-ppp.service   # started by the first 'bngctl config apply
 log "bngctl"
 python3 -m venv "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q --upgrade pip
-"$PREFIX/venv/bin/pip" install -q "$SRC/backend"
+"$PREFIX/venv/bin/pip" install -q "$SRC/backend[api]"
 "$PREFIX/venv/bin/pip" install -q --force-reinstall --no-deps "$SRC/backend"   # pick up code changes on re-install
 ln -sf "$PREFIX/venv/bin/bngctl" /usr/local/sbin/bngctl
 
@@ -91,6 +91,28 @@ if ! grep -qxF "$INC" /etc/nftables.conf; then
 fi
 systemctl enable nftables.service
 
+log "Management database (PostgreSQL; management state only, never in the data plane)"
+DBURL="$ETC/secrets/db.url"
+if [ ! -s "$DBURL" ]; then
+  PW=$(openssl rand -hex 24)   # generated here, never printed
+  VERB=CREATE
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='bng_api'" | grep -q 1 && VERB=ALTER
+  # via stdin (printf is a builtin), so the password never shows in a process list; hex needs no quoting
+  printf "%s ROLE bng_api LOGIN PASSWORD '%s';\n" "$VERB" "$PW" | sudo -u postgres psql -q -v ON_ERROR_STOP=1
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='bng_platform'" | grep -q 1 \
+    || sudo -u postgres createdb -O bng_api bng_platform
+  (umask 077; printf 'postgresql+psycopg://bng_api:%s@127.0.0.1:5432/bng_platform\n' "$PW" > "$DBURL")
+  unset PW
+  echo "  created role bng_api, database bng_platform, $DBURL (0600)"
+fi
+bngctl db upgrade
+
+log "bng-api"
+install -m 0644 "$SRC/system/systemd/bng-api.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable bng-api.service
+systemctl restart bng-api.service
+
 log "Health"
 bngctl health || true
 cat <<EOF
@@ -99,4 +121,6 @@ Next:
   sudo bash $SRC/scripts/lab/lab-up.sh      # veth/netns lab subscriber
   sudo bngctl config apply                  # first start of accel-ppp
   sudo bngctl firewall apply                # then confirm from a NEW ssh session
+  sudo bngctl admin create <name> --role super_admin   # first API administrator
+  ssh -L 8080:127.0.0.1:8080 <node>         # API docs: http://localhost:8080/api/docs
 EOF

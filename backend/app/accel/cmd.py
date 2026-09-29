@@ -42,6 +42,25 @@ def parse_sessions(text: str, columns) -> list[dict[str, str]]:
     return rows
 
 
+def parse_stat(text: str) -> dict:
+    """`show stat` -> {"uptime": "0.01:36:16", "sessions": {"active": "0", ...}, ...}.
+    Values stay strings: some are not numbers ("14(0)", "0%", "7988/513992 kB")."""
+    out: dict = {}
+    section = None
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        key, _, value = line.strip().partition(":")
+        value = value.strip()
+        if line[0].isspace() and section is not None:
+            section[key] = value
+        elif value:
+            out[key], section = value, None
+        else:
+            section = out.setdefault(key, {})
+    return out
+
+
 class AccelCmd:
     def __init__(self, host: str | None = None, port: int | None = None,
                  binary: str = "/usr/local/bin/accel-cmd", timeout: float = 10.0):
@@ -82,6 +101,9 @@ class AccelCmd:
 
     def stat(self) -> str:
         return self.run("show", "stat")
+
+    def stat_dict(self) -> dict:
+        return parse_stat(self.stat())
 
     def version(self) -> str:
         return self.run("show", "version").strip()

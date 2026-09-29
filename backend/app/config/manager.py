@@ -21,6 +21,11 @@ from typing import Callable
 
 import yaml
 
+try:
+    import fcntl
+except ImportError:  # Windows dev box: tests only
+    fcntl = None
+
 from app.accel.render import Rendered, render
 from app.accel.validate import validate_text
 from app.config.model import BngConfig, load
@@ -52,6 +57,8 @@ class Paths:
     def backups(self) -> Path: return self.state / "backups"
     @property
     def audit_log(self) -> Path: return self.state / "audit.jsonl"
+    @property
+    def lock(self) -> Path: return self.state / "apply.lock"
 
 
 def _sections(text: str) -> dict[str | None, list[str]]:
@@ -161,6 +168,17 @@ class ConfigManager:
                 f.unlink()
 
     def apply(self, candidate: Path, admin: str, source: str, allow_restart: bool = False) -> str:
+        """Serialised across processes (bngctl and bng-api): a second apply fails fast."""
+        self.paths.state.mkdir(parents=True, exist_ok=True)
+        with open(self.paths.lock, "a") as lock:
+            if fcntl:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ApplyError("another configuration change is in progress") from None
+            return self._apply(candidate, admin, source, allow_restart)
+
+    def _apply(self, candidate: Path, admin: str, source: str, allow_restart: bool) -> str:
         who = {"admin": admin, "source": source, "action": "config_apply"}
         try:
             cfg, new = self.build(candidate)

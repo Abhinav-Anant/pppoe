@@ -45,6 +45,14 @@ def _secret(paths: Paths) -> str | None:
         return None
 
 
+def _db_url() -> str | None:
+    try:
+        from app.db import db_url  # management extra; core commands must work without it
+    except ImportError:
+        return None
+    return db_url()
+
+
 def _show(v: bytes) -> str:
     try:
         s = v.decode()
@@ -87,6 +95,16 @@ def _parser() -> argparse.ArgumentParser:
     fw = sub.add_parser("firewall").add_subparsers(dest="action", required=True)
     fw.add_parser("apply")
     fw.add_parser("confirm")
+    sub.add_parser("db").add_subparsers(dest="action", required=True).add_parser("upgrade")
+    adm = sub.add_parser("admin").add_subparsers(dest="action", required=True)
+    adm.add_parser("list")
+    for name in ("create", "passwd", "disable", "enable"):
+        x = adm.add_parser(name)
+        x.add_argument("username")
+        if name == "create":
+            x.add_argument("--role", required=True)
+        if name in ("create", "passwd"):
+            x.add_argument("--password-stdin", action="store_true", help="read the password from stdin")
     return p
 
 
@@ -193,7 +211,7 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
         return 0
 
     if a.cmd == "health":
-        checks = health.run_all(load(paths.config), accel, _secret(paths))
+        checks = health.run_all(load(paths.config), accel, _secret(paths), _db_url())
         print(health.format_report(checks))
         return 1 if any(c.status == "FAIL" for c in checks) else 0
 
@@ -238,4 +256,62 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
             print("firewall confirmed and persisted")
         mgr.audit(**who, action=f"firewall_{a.action}", result="ok")
         return 0
+
+    if a.cmd in ("db", "admin"):
+        _require_root()
+        url = _db_url()
+        if not url:
+            raise ValueError("no management database configured (/etc/bng-platform/secrets/db.url)")
+        return _manage(a, url, who)
     return 2
+
+
+def _read_password(a) -> str:
+    from app.api.auth import check_password_policy
+
+    if a.password_stdin:
+        pw = sys.stdin.readline().rstrip("\n")
+    else:
+        pw = getpass.getpass(f"new password for {a.username}: ")
+        if getpass.getpass("repeat: ") != pw:
+            raise ValueError("passwords do not match")
+    check_password_policy(pw)
+    return pw
+
+
+def _manage(a, url: str, who: dict) -> int:
+    from sqlalchemy import select
+
+    from app import db
+    from app.api import auth
+
+    if a.cmd == "db":
+        db.upgrade(url)
+        print("database schema is current")
+        return 0
+    with db.make_sessionmaker(url)() as s:
+        if a.action == "list":
+            for u in s.scalars(select(db.Admin).order_by(db.Admin.username)):
+                print(f"{u.username:<24}{u.role:<16}{'disabled' if u.disabled else 'active':<10}"
+                      f"{u.last_login_at or ''}")
+            return 0
+        user = s.scalar(select(db.Admin).where(db.Admin.username == a.username))
+        if a.action == "create":
+            if user:
+                raise ValueError(f"admin {a.username} exists")
+            if a.role not in auth.ROLES:
+                raise ValueError(f"role must be one of {', '.join(auth.ROLES)}")
+            if not re.fullmatch(r"[A-Za-z0-9_.@\-]{1,64}", a.username):
+                raise ValueError("username may contain only letters, digits and _.@-")
+            s.add(db.Admin(username=a.username, role=a.role, password_hash=auth.hash_password(_read_password(a))))
+        elif not user:
+            raise ValueError(f"no admin {a.username}")
+        elif a.action == "passwd":
+            user.password_hash = auth.hash_password(_read_password(a))
+            s.execute(db.AuthSession.__table__.delete().where(db.AuthSession.admin_id == user.id))
+        else:
+            user.disabled = a.action == "disable"
+        s.commit()
+        auth.audit(s, f"admin_{a.action}", "ok", admin=who["admin"], ip=who["source"], target=a.username)
+    print(f"admin {a.username}: {a.action} done")
+    return 0

@@ -7,6 +7,7 @@ import socket
 import subprocess
 import time
 import tomllib
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -170,18 +171,50 @@ def check_easywall() -> Check:
     return _ok("easywall", active, 'core active, routing.mode = "open"' if active else "easywall-core not active")
 
 
+API_URL = "http://127.0.0.1:8080/api/livez"
+
+
+API_UNIT = Path("/etc/systemd/system/bng-api.service")
+
+
+def check_api() -> Check:
+    if not API_UNIT.exists():
+        return Check("API", "SKIP", "bng-api not installed")
+    try:
+        with urllib.request.urlopen(API_URL, timeout=3) as r:
+            return _ok("API", r.status == 200, f"{API_URL} {r.status}")
+    except OSError as e:
+        return Check("API", "FAIL", f"{API_URL}: {e}")
+
+
+def check_database(url: str | None) -> Check:
+    if not url:
+        return Check("Database", "SKIP", "not configured (run as root to read the DB URL)")
+    from sqlalchemy import create_engine, text  # management extra; not needed by the data plane
+
+    from app.db import _connect_args
+    try:
+        engine = create_engine(url, connect_args=_connect_args(url))
+        with engine.connect() as c:
+            rev = c.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        engine.dispose()
+        return Check("Database", "PASS", f"schema {rev}")
+    except Exception as e:  # driver errors carry no common base we can import lazily
+        return Check("Database", "FAIL", str(e).splitlines()[0])
+
+
 def critical_failures(cfg: BngConfig, accel: AccelCmd) -> list[str]:
     """Checks that gate a config apply; anything failing here triggers rollback."""
     checks = [check_service(), check_cli(accel), check_pppoe(cfg, accel)]
     return [f"{c.name}: {c.detail}" for c in checks if c.status == "FAIL"]
 
 
-def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None) -> list[Check]:
+def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None, db_url: str | None = None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
         check_rates(cfg, accel), check_nat(cfg), check_easywall(),
-        Check("API", "SKIP", "Phase 5"), Check("Database", "SKIP", "Phase 5"),
+        check_api(), check_database(db_url),
     ]
 
 

@@ -1,0 +1,29 @@
+uptime: 0.01:36:16
+cpu: 0%
+mem(rss/virt): 7988/513992 kB
+core:
+  mempool_allocated: 148352
+  mempool_available: 146640
+  thread_count: 12
+  thread_active: 1
+  context_count: 6
+  context_sleeping: 0
+  context_pending: 0
+  md_handler_count: 3
+  md_handler_pending: 0
+  timer_count: 0
+  timer_pending: 0
+sessions:
+  starting: 0
+  active: 0
+  finishing: 0
+pppoe:
+  starting: 0
+  active: 0
+  delayed PADO: 0
+  recv PADI: 14
+  drop PADI: 0
+  sent PADO: 14
+  recv PADR(dup): 14(0)
+  sent PADS: 14
+  filtered: 0

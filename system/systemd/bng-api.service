@@ -1,0 +1,28 @@
+[Unit]
+Description=BNG management API (management plane; PPPoE and forwarding do not depend on it)
+After=network-online.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+# localhost only: reach it through an SSH tunnel until the Phase 6 reverse proxy exists.
+ExecStart=/opt/bng-platform/venv/bin/uvicorn --factory app.api.main:create_app \
+  --host 127.0.0.1 --port 8080 --workers 1 --no-server-header --log-level warning
+Restart=on-failure
+RestartSec=3
+# Runs as root: it applies configuration (writes /etc/bng-platform, drives
+# accel-ppp.service) and reads nft counters. ponytail: move those into an
+# unprivileged API + privileged bng-worker split before exposing it beyond localhost.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/bng-platform /var/lib/bng-platform
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
