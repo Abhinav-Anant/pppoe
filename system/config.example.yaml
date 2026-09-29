@@ -1,0 +1,30 @@
+# bng-platform node configuration (desired state). Apply with: sudo bngctl config apply
+# Secrets never go here: the RADIUS shared secret lives in
+# /etc/bng-platform/secrets/radius.secret (root, mode 0600).
+node: bng01
+aaa: lab                 # lab = accel-ppp chap-secrets on the veth lab; radius = Jaze
+uplink: ens18            # install.sh replaces this with the default-route interface
+pppoe:
+  ac_name: bng01
+  interfaces:
+    - name: bnglab0      # lab veth created by scripts/lab/lab-up.sh
+ppp:
+  mtu: 1492
+  mru: 1492
+ip_pools:
+  gw_ip_address: 100.64.255.254
+  default: lab
+  pools:
+    - name: lab
+      network: 100.64.0.0/24
+dns: [8.8.8.8, 1.1.1.1]
+shaper:
+  attr: Filter-Id        # attribute Jaze sends the rate in; confirm with Jaze
+# radius:                # required when aaa: radius
+#   nas_identifier: bng01
+#   nas_ip_address: 43.229.72.90
+#   coa_listen: 43.229.72.90
+#   servers:
+#     - address: 192.0.2.10
+#     - address: 192.0.2.11
+#       backup: true
