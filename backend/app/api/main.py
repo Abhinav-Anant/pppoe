@@ -354,6 +354,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
     def change_password(body: PasswordIn, request: Request, p: Principal = Depends(require()),
                         db: Session = Depends(get_db)):
         admin = db.scalar(select(Admin).where(Admin.username == p.username))
+        if not admin:  # a service token has no password
+            raise HTTPException(403, "not an administrator login")
         if not auth.verify_password(body.current, admin.password_hash):
             audit(db, "password_change", "failed", admin=p.username, ip=p.ip)
             raise HTTPException(403, "current password is wrong")

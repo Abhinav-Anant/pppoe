@@ -20,6 +20,9 @@ def test_bearer_token_no_csrf_and_acting_role(api):
     t = make_token(api)
     h = {"authorization": f"Bearer {t}"}
     assert api.get("/api/sessions", headers=h).json()["total"] == 3
+    me = api.get("/api/auth/me", headers=h).json()  # how a console verifies a token
+    assert me["username"] == "token:central" and me["csrf_token"] is None
+    assert api.post("/api/auth/password", json={"current": "x", "new": "y" * 12}, headers=h).status_code == 403
     # bearer is not a cookie: no CSRF header needed
     assert api.post("/api/sessions/a1/disconnect", json={}, headers=h).status_code == 200
     # the acting admin's role narrows the token

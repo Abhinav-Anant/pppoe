@@ -132,9 +132,13 @@ def _session(db: Session, token: str) -> AuthSession | None:
     return db.scalar(select(AuthSession).where(AuthSession.token_hash == _sha(token))) if token else None
 
 
-def rotate_csrf(db: Session, token: str) -> str:
+def rotate_csrf(db: Session, token: str) -> str | None:
+    """None for a bearer-token caller: it has no cookie session and needs no CSRF token."""
+    s = _session(db, token)
+    if not s:
+        return None
     csrf = secrets.token_urlsafe(32)
-    _session(db, token).csrf_hash = _sha(csrf)
+    s.csrf_hash = _sha(csrf)
     db.commit()
     return csrf
 
