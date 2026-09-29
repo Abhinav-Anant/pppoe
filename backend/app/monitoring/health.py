@@ -12,7 +12,6 @@ from pathlib import Path
 
 from app.accel.cmd import AccelCmd, AccelError
 from app.config.model import BngConfig
-from app.qos import cake
 from app.radius import probe
 
 
@@ -126,17 +125,6 @@ def check_nat(cfg: BngConfig) -> Check:
     return _ok("NAT", ok, "" if ok else f"ip_forward={int(fwd)}, bng_nat {'loaded' if loaded else 'missing'}")
 
 
-def check_cake(cfg: BngConfig) -> Check:
-    if not cfg.qos:
-        return Check("CAKE", "SKIP", "no qos.cake configured")
-    if not cfg.qos.cake.enabled:
-        return Check("CAKE", "SKIP", "qos.cake disabled")
-    st = cake.status(cfg)
-    missing = [k.split(" ")[0] for k, v in st.items() if v is None]
-    detail = ", ".join(f"{k.split(' ')[0]} {v['bandwidth_mbit']:.0f} Mbit" for k, v in st.items() if v)
-    return _ok("CAKE", not missing, f"missing: {', '.join(missing)}" if missing else detail)
-
-
 EASYWALL_TOML = Path("/etc/easywall/easywall.toml")
 
 
@@ -166,7 +154,7 @@ def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
-        check_nat(cfg), check_cake(cfg), check_easywall(),
+        check_nat(cfg), check_easywall(),
         Check("API", "SKIP", "Phase 5"), Check("Database", "SKIP", "Phase 5"),
     ]
 

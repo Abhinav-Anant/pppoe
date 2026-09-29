@@ -21,7 +21,7 @@ case "$ID" in ubuntu|debian) ;; *) echo "unsupported distribution: $ID" >&2; exi
 
 log "Kernel modules"
 missing=0
-for m in ppp_generic pppox pppoe sch_cake ifb act_mirred sch_htb cls_u32 nf_conntrack nf_nat nft_nat 8021q; do
+for m in ppp_generic pppox pppoe ifb act_mirred sch_htb cls_u32 nf_conntrack nf_nat nft_nat 8021q; do
   if modinfo "$m" >/dev/null 2>&1; then printf '  %-14s ok\n' "$m"; else printf '  %-14s MISSING\n' "$m"; missing=1; fi
 done
 [ "$missing" -eq 0 ] || { echo "required kernel modules missing" >&2; exit 1; }
@@ -52,10 +52,9 @@ fi
 /usr/local/sbin/accel-pppd -V
 
 log "systemd"
-install -m 0644 "$SRC/system/systemd/accel-ppp.service" "$SRC/system/systemd/bng-qos.service" /etc/systemd/system/
+install -m 0644 "$SRC/system/systemd/accel-ppp.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable accel-ppp.service   # started by the first 'bngctl config apply'
-systemctl enable bng-qos.service     # runs /etc/bng-platform/tc/cake.sh once confirmed
 
 log "bngctl"
 python3 -m venv "$PREFIX/venv"
@@ -65,7 +64,7 @@ python3 -m venv "$PREFIX/venv"
 ln -sf "$PREFIX/venv/bin/bngctl" /usr/local/sbin/bngctl
 
 log "Configuration"
-install -d -m 0755 "$ETC" "$ETC/accel-ppp" "$ETC/nftables" "$ETC/tc"
+install -d -m 0755 "$ETC" "$ETC/accel-ppp" "$ETC/nftables"
 install -d -m 0700 "$ETC/secrets" "$STATE"
 if [ ! -f "$ETC/config.yaml" ]; then
   UPLINK=$(ip route show default | awk '{print $5; exit}')

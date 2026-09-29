@@ -51,33 +51,6 @@ Rendered into the same nftables file as the host firewall and applied with
 `sudo bngctl firewall apply` + confirm from a new SSH session (120 s auto-revert).
 `sudo bngctl nat status` shows forwarding, conntrack usage and per-pool counters.
 
-### QoS — aggregate CAKE (`qos.cake`)
-
-| Direction | Placement |
-|---|---|
-| `upload` = Customer → Internet | uplink **egress** root qdisc |
-| `download` = Internet → Customer | uplink **ingress** → `mirred` → IFB `bngifb0` egress (`ingress` mode) |
-
-| Key | Type / default |
-|---|---|
-| `enabled` | bool, `true` |
-| `mode` | `cake` \| `cake_mq` (refused unless detected by `bngctl qos capabilities`) |
-| `rtt_ms` | 1–10000, `100` |
-| `overhead` / `mpu` | -64..256 / 0..256, unset = `raw` |
-| `link_layer` | `noatm` \| `atm` \| `ptm` |
-| `nat` | bool, `true` (isolate by pre-NAT subscriber address) |
-| `wash` | bool, `false` |
-| `upload` / `download`: `bandwidth_mbit` | 1–400000, required |
-| … `diffserv` | `besteffort` \| `diffserv3` \| `diffserv4` \| `diffserv8` |
-| … `isolation` | default `dual-srchost` (upload) / `dual-dsthost` (download) |
-| … `ack_filter` | `no-ack-filter` \| `ack-filter` \| `ack-filter-aggressive` |
-
-Set bandwidth to ~95 % of the real bottleneck (contracted rate). Apply:
-`sudo bngctl config apply`, `sudo bngctl qos apply`, confirm with `sudo bngctl qos confirm`
-from a **new** SSH session within 120 s. `bng-qos.service` re-applies the confirmed
-`/etc/bng-platform/tc/cake.sh` at boot. `sudo bngctl qos status` shows per-direction bytes,
-drops, ECN marks and queue delay.
-
 `[modules]`, `[core]` and `[cli]` are read only at daemon start. A change there needs an
 accel-ppp restart, which disconnects every subscriber, so apply refuses it unless
 `--allow-restart` is given. Everything else is applied with `accel-cmd reload`; established

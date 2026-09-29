@@ -1,5 +1,9 @@
 # Phase 3 results — aggregate CAKE on bng01
 
+> **Removed on 2026-09-29 at the operator's request.** CAKE code, `bng-qos.service` and the
+> `qos` config section were deleted (branch `phase-4`); this page records what was measured.
+> The code remains in git history on branch `phase-3`.
+
 Date: 2026-09-29. Kernel 6.8.0-142, iproute2 6.1, uplink `ens18` (virtio, 1 queue).
 Tool: `scripts/bench/loaded-latency.py` (parallel HTTP load against public servers + 5 pings/s).
 Public servers throttle, so throughput numbers are lower bounds. VM result — no capacity claim.
