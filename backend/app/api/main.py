@@ -604,6 +604,8 @@ def _candidate(node: Node, data: dict):
 def _apply(node: Node, db: Session, p: Principal, data: dict, allow_restart: bool) -> dict:
     cfg = _model(data)
     changed = _changed(node, cfg)
+    if not changed:  # same settings; don't rewrite the operator's YAML (comments) into a new version
+        return {"result": "no changes", "changed": []}
     missing = _needed(changed) - p.permissions
     if missing:
         raise HTTPException(403, f"changing {', '.join(sorted(changed))} needs {', '.join(sorted(missing))}")

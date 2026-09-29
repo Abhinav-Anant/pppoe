@@ -112,6 +112,7 @@ install -m 0644 "$SRC/system/systemd/bng-api.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable bng-api.service
 systemctl restart bng-api.service
+for _ in $(seq 20); do curl -fs -o /dev/null http://127.0.0.1:8080/api/livez && break; sleep 0.5; done
 
 log "Health"
 bngctl health || true

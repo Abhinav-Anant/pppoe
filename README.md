@@ -1,11 +1,11 @@
 # bng-platform
 
 Linux BNG / PPPoE concentrator built on upstream **ACCEL-PPP 1.14.0**, nftables and tc,
-with a management plane (`bngctl` now; API + web GUI in later phases) that is never in the
+with a management plane (`bngctl`, `bng-api`; web GUI next) that is never in the
 packet path. External AAA is Jaze RADIUS; no RADIUS server is deployed here.
 
 ```text
-             CONTROL PLANE            bngctl  (later: FastAPI + React)
+             CONTROL PLANE            bngctl, bng-api (FastAPI + PostgreSQL)  (next: React GUI)
                   |
      +------------+-------------+
    ACCEL          nft           tc
@@ -15,7 +15,7 @@ packet path. External AAA is Jaze RADIUS; no RADIUS server is deployed here.
 ```
 
 If the management plane is stopped or removed, established PPPoE sessions keep forwarding
-(verified: `docs/phase1-results.md`).
+(verified: `docs/phase1-results.md`; API + database stopped: `docs/phase5-results.md`).
 
 ## Status
 
@@ -25,7 +25,7 @@ If the management plane is stopped or removed, established PPPoE sessions keep f
 | 2 | nftables CGNAT, forward filter, MSS clamp, conntrack | done in lab (`docs/phase2-results.md`); NAT logging designed |
 | 3 | CAKE | demonstrated (`docs/phase3-results.md`), then **removed** at the operator's request |
 | 4 | Priority = plan rate from RADIUS (per-session shaper), rate guard; easywall host firewall | done in lab (`docs/rate-limits.md`, `docs/easywall.md`); Jaze attribute + easywall hand-over open |
-| 5 | FastAPI management API | pending |
+| 5 | FastAPI management API, RBAC, audit, PostgreSQL | done in lab (`docs/api.md`, `docs/phase5-results.md`) |
 | 6 | Web GUI | pending |
 | 7 | Multi-BNG | pending |
 | 8 | Performance testing | pending |
@@ -38,7 +38,9 @@ appropriate hardware demonstrate it.
 - [ARCHITECTURE_ASSESSMENT.md](ARCHITECTURE_ASSESSMENT.md) — environment and upstream findings
 - [docs/installation.md](docs/installation.md)
 - [docs/configuration.md](docs/configuration.md)
+- [docs/api.md](docs/api.md) — management API, roles, endpoints
 - [docs/phase1-results.md](docs/phase1-results.md)
+- [docs/phase5-results.md](docs/phase5-results.md)
 
 ## Layout
 

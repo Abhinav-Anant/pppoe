@@ -155,6 +155,7 @@ def test_config_apply_permissions_and_versioning(api, base_cfg):
     cfg = api.get("/api/config").json()["config"]
     assert api.post("/api/config/apply", json={"config": cfg}).status_code == 403
     login(api, "network_admin")
+    assert api.post("/api/config/apply", json={"config": cfg}).json()["result"] == "no changes"
     bad = dict(cfg, uplink="eth0; rm -rf /")
     assert api.post("/api/config/apply", json={"config": bad}).status_code == 422
     v = api.post("/api/config/validate", json={"config": dict(cfg, dns=["1.1.1.1"])}).json()

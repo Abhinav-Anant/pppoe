@@ -40,6 +40,19 @@ sudo bash /opt/bng-platform/src/scripts/lab/lab-test.sh # end-to-end PPPoE test
 sudo /opt/bng-platform/src/scripts/health-check.sh
 ```
 
+## Management API
+
+`install.sh` also installs PostgreSQL (localhost only), creates database `bng_platform` with a
+generated credential in `/etc/bng-platform/secrets/db.url`, runs the schema migration and starts
+`bng-api.service` on `127.0.0.1:8080`. Create the first administrator yourself:
+
+```bash
+sudo bngctl admin create <name> --role super_admin
+ssh -L 8080:127.0.0.1:8080 <node>      # then http://localhost:8080/api/docs
+```
+
+See [api.md](api.md).
+
 ## Uninstall
 
 ```bash

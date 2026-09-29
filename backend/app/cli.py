@@ -98,7 +98,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("db").add_subparsers(dest="action", required=True).add_parser("upgrade")
     adm = sub.add_parser("admin").add_subparsers(dest="action", required=True)
     adm.add_parser("list")
-    for name in ("create", "passwd", "disable", "enable"):
+    for name in ("create", "passwd", "disable", "enable", "delete"):
         x = adm.add_parser(name)
         x.add_argument("username")
         if name == "create":
@@ -191,7 +191,7 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
     if a.cmd == "config":
         if a.action == "history":
             for m in mgr.history():
-                print(f"v{m['version']:<5}{m['timestamp']}  {m['admin']:<12}{m['source']}"
+                print(f"v{m['version']:<5}{m['timestamp']}  {m['admin']:<12}  {m['source']}"
                       + ("  (restart)" if m.get("restart") else ""))
             return 0
         if a.action == "rollback":
@@ -309,6 +309,8 @@ def _manage(a, url: str, who: dict) -> int:
         elif a.action == "passwd":
             user.password_hash = auth.hash_password(_read_password(a))
             s.execute(db.AuthSession.__table__.delete().where(db.AuthSession.admin_id == user.id))
+        elif a.action == "delete":
+            s.delete(user)
         else:
             user.disabled = a.action == "disable"
         s.commit()
