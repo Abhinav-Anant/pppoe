@@ -53,6 +53,20 @@ for dir in download upload; do
   step "$dir ${mbps} Mbit/s (limit ${LIMIT})" "$ok"
 done
 
+if nft list table ip bng_nat >/dev/null 2>&1; then
+  EXPECT=$(/opt/bng-platform/venv/bin/python -c \
+    'from app.config.model import load; print(load("/etc/bng-platform/config.yaml").nat.pools[0].public_start)')
+  ip -n "$NS" route replace default dev ppp0
+  ip netns exec "$NS" ping -c 3 -W 2 1.1.1.1 >/dev/null && step "Internet ping via NAT" PASS || step "Internet ping via NAT" FAIL
+  ip netns exec "$NS" getent hosts api.ipify.org >/dev/null && step "DNS (UDP) via NAT" PASS || step "DNS (UDP) via NAT" FAIL
+  SEEN=$(ip netns exec "$NS" curl -s -4 --max-time 10 https://api.ipify.org)
+  step "HTTPS via CGNAT (seen as ${SEEN:-none})" "$([ "$SEEN" = "$EXPECT" ] && echo PASS || echo FAIL)"
+  conntrack -L --src "$CLIENT_IP" --src-nat 2>/dev/null | grep -q "dst=$EXPECT" \
+    && step "conntrack SNAT entry" PASS || step "conntrack SNAT entry" FAIL
+  nft list chain inet bng_filter forward | grep -q "maxseg size set rt mtu" \
+    && step "MSS clamp rule" PASS || step "MSS clamp rule" FAIL
+fi
+
 gone() { [ -z "$(bngctl sessions --json --search labuser | python3 -c 'import json,sys; print(json.load(sys.stdin) or "")')" ]; }
 bngctl session disconnect "$SID" >/dev/null
 for _ in $(seq 20); do gone && break; sleep 0.5; done

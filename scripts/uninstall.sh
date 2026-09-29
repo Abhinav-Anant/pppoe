@@ -15,6 +15,9 @@ rm -f /etc/systemd/system/accel-ppp.service
 systemctl daemon-reload
 if [ -f /opt/bng-platform/accel-ppp.manifest ]; then xargs -d '\n' rm -f < /opt/bng-platform/accel-ppp.manifest; fi
 nft delete table inet bng_filter 2>/dev/null || true
+nft delete table ip bng_nat 2>/dev/null || true
+rm -f /etc/sysctl.d/90-bng-platform.conf
+sysctl -q -w net.ipv4.ip_forward=0
 sed -i '\#^include "/etc/bng-platform/nftables/\*\.nft"$#d' /etc/nftables.conf
 rm -f /usr/local/sbin/bngctl /etc/modules-load.d/bng-platform.conf
 rm -rf /opt/bng-platform

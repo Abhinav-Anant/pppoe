@@ -13,6 +13,9 @@ ip link show "$HOST_IF" >/dev/null 2>&1 || ip link add "$HOST_IF" type veth peer
 ip link set "$HOST_IF" up
 ip -n "$NS" link set lo up
 ip -n "$NS" link set "$PEER_IF" up
+# the host resolver is 127.0.0.53 (systemd-resolved), unreachable from the namespace
+install -d /etc/netns/"$NS"
+echo "nameserver 8.8.8.8" > /etc/netns/"$NS"/resolv.conf
 
 umask 077
 install -d -m 0700 "$LAB"

@@ -32,7 +32,7 @@ log "Packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q build-essential cmake git libssl-dev libpcre2-dev python3-venv \
-  nftables iproute2 ethtool ppp iperf3 tcpdump
+  nftables iproute2 ethtool ppp iperf3 tcpdump conntrack curl
 
 log "ACCEL-PPP $ACCEL_PPP_VERSION"
 if /usr/local/sbin/accel-pppd -V 2>/dev/null | grep -qx "accel-ppp $ACCEL_PPP_VERSION"; then
@@ -70,11 +70,18 @@ if [ ! -f "$ETC/config.yaml" ]; then
   UPLINK=$(ip route show default | awk '{print $5; exit}')
   sed "s/^uplink: .*/uplink: ${UPLINK}            # default-route interface at install time/" \
     "$SRC/system/config.example.yaml" > "$ETC/config.yaml"
+  PUBLIC=$(ip -4 -o addr show dev "$UPLINK" scope global | awk '{split($4,a,"/"); print a[1]; exit}')
+  sed -i "s/public_start: 192.0.2.1 .*/public_start: ${PUBLIC}   # uplink IPv4 at install time/" "$ETC/config.yaml"
   chmod 0640 "$ETC/config.yaml"
-  echo "  created $ETC/config.yaml (aaa: lab, uplink: $UPLINK)"
+  echo "  created $ETC/config.yaml (aaa: lab, uplink: $UPLINK, nat public: $PUBLIC)"
 else
   echo "  keeping existing $ETC/config.yaml"
 fi
+
+log "Forwarding"
+# A BNG routes; the forward chain (policy drop) of 'bngctl firewall apply' decides what passes.
+printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-bng-platform.conf
+sysctl -q -p /etc/sysctl.d/90-bng-platform.conf
 
 log "nftables persistence"
 INC='include "/etc/bng-platform/nftables/*.nft"'
