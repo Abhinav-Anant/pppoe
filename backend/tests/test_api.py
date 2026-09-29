@@ -18,7 +18,7 @@ PW = "correct horse battery"
 
 
 def row(sid, user, ip, mac, rate="100000/20000", state="active", rx="10", tx="990"):
-    return {"sid": sid, "ifname": f"ppp{sid}", "ip": ip, "ip6": "", "ip6-dp": "", "calling-sid": mac,
+    return {"sid": sid, "ifname": f"ppp{sid}", "inbound-if": "ens18.4044", "rx-pkts": "1", "tx-pkts": "2", "ip": ip, "ip6": "", "ip6-dp": "", "calling-sid": mac,
             "called-sid": "aa", "state": state, "uptime-raw": "60", "rx-bytes-raw": rx, "tx-bytes-raw": tx,
             "rate-limit": rate, "username": user}
 
@@ -211,3 +211,76 @@ def test_database_down_is_503(tmp_path, base_cfg):
 def test_no_generic_execution_endpoint(api):
     paths = [r.path for r in api.app.routes]
     assert not [p for p in paths if any(w in p for w in ("exec", "shell", "command", "run"))]
+
+
+def test_session_rates_and_churn():
+    from app.monitoring.sampler import SessionRates
+    sr = SessionRates()
+    rows = [{"sid": "a", "upload_bytes": 0, "download_bytes": 0}]
+    sr.update(rows, t=100.0)
+    assert rows[0]["download_mbps"] is None  # first read is a baseline
+    rows = [{"sid": "a", "upload_bytes": 125_000, "download_bytes": 1_250_000}, {"sid": "b", "upload_bytes": 0, "download_bytes": 0}]
+    sr.update(rows, t=101.0)
+    assert (rows[0]["download_mbps"], rows[0]["upload_mbps"]) == (10.0, 1.0)
+    assert rows[0]["peak_download_mbps"] == 10.0
+    sr.update([{"sid": "b", "upload_bytes": 0, "download_bytes": 0}], t=102.0)
+    assert sr.per_minute() == {"logins_per_min": 1, "logouts_per_min": 1}
+
+
+def test_vlan_from_inbound_interface():
+    from app.api.main import _vlan
+    assert (_vlan("ens18.4044"), _vlan("bnglab0"), _vlan("")) == (4044, None, None)
+
+
+def test_config_yaml_keeps_comments(api):
+    login(api, "network_admin")
+    text = api.get("/api/config").json()["yaml"] + "dns: [1.1.1.1]   # resolver for subscribers\n"
+    r = api.post("/api/config/apply", json={"yaml": text})
+    assert r.status_code == 200, r.text
+    assert "# resolver for subscribers" in api.node.paths.config.read_text()
+    assert api.post("/api/config/apply", json={"yaml": "- not a mapping"}).status_code == 422
+    assert api.post("/api/config/apply", json={}).status_code == 422
+
+
+def ws_headers(client, origin="https://testserver"):
+    # TestClient always connects ws:// (httpx then withholds the Secure cookie)
+    return {"origin": origin, "cookie": f"{auth.COOKIE}={client.cookies.get(auth.COOKIE)}"}
+
+
+def test_ws_requires_login_and_same_origin(api):
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with api.websocket_connect("/api/ws/metrics", headers={"origin": "https://testserver"}) as ws:
+            ws.receive_json()
+    login(api, "read_only")
+    with pytest.raises(WebSocketDisconnect):
+        with api.websocket_connect("/api/ws/metrics", headers=ws_headers(api, "https://evil.example")) as ws:
+            ws.receive_json()
+    with api.websocket_connect("/api/ws/metrics", headers=ws_headers(api)) as ws:
+        snap = ws.receive_json()
+    assert snap["sessions"]["total"] == 3 and snap["sessions"]["duplicates"] == 2
+
+
+def test_ws_sessions_incremental(api):
+    login(api, "read_only")
+    with api.websocket_connect("/api/ws/sessions", headers=ws_headers(api)) as ws:
+        ws.send_json({"sids": ["a1", "nope", "bad sid"]})
+        msgs = [ws.receive_json() for _ in range(3)]
+    ups = [u for m in msgs for u in m["updates"]]
+    assert {u["sid"] for u in ups} <= {"a1", "nope"}
+    assert any(u["sid"] == "a1" and u["state"] == "active" for u in ups)
+    assert any(u.get("gone") for u in ups if u["sid"] == "nope")
+
+
+def test_spa_fallback(api, tmp_path, monkeypatch):
+    from app.api import main
+    web = tmp_path / "web"
+    (web / "assets").mkdir(parents=True)
+    (web / "index.html").write_text("<html>app</html>")
+    (web / "assets" / "x.js").write_text("js")
+    monkeypatch.setattr(main, "WEB_DIR", web)
+    assert api.get("/sessions/abc").text == "<html>app</html>"
+    assert "frame-ancestors 'none'" in api.get("/").headers["content-security-policy"]
+    assert api.get("/assets/x.js").text == "js"
+    assert api.get("/api/nope").status_code == 404
+    assert "app" in api.get("/..%2F..%2Fetc%2Fpasswd").text

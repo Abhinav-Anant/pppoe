@@ -58,4 +58,4 @@ def test_parses_real_1_14_0_output():
     r = rows[0]
     assert r["username"] == "labuser" and r["ifname"] == "ppp0" and r["ip"].startswith("100.64.0.")
     assert r["state"] in ("start", "active") and r["rx-bytes-raw"].isdigit()
-    assert r["rate-limit"] == "20480/20480"
+    assert r["rate-limit"] == "20480/20480" and r["inbound-if"] == "bnglab0" and r["rx-pkts"].isdigit()

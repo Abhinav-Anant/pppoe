@@ -7,6 +7,7 @@ database stops, PPPoE sessions and forwarding are unaffected.
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import difflib
 import json
@@ -20,20 +21,23 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from fastapi import Body, Depends, FastAPI, HTTPException, Path as PathParam, Query, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import Body, Depends, FastAPI, HTTPException, Path as PathParam, Query, Request, Response, WebSocket
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from pydantic import BaseModel, Field, ValidationError, model_validator
+from starlette.websockets import WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.accel.cmd import AccelCmd, AccelError, AccelService
+from app.accel.cmd import SID_RE, AccelCmd, AccelError, AccelService
 from app.api import auth
 from app.api.auth import Principal, audit, get_db, require
 from app.config.manager import ApplyError, ConfigManager, Paths
 from app.config.model import BngConfig, Shaper, load
 from app.db import Admin, AuditLog, db_url, make_sessionmaker
 from app.monitoring import health
+from app.monitoring.sampler import HostRates, SessionRates
 from app.networking import firewall
 from app.networking.interfaces import list_interfaces
 
@@ -41,6 +45,9 @@ SID = r"^[0-9A-Za-z]{1,32}$"
 SEARCH = r"^[A-Za-z0-9_.@:\-]{1,64}$"
 USERNAME = r"^[A-Za-z0-9_.@\-]{1,64}$"
 SESSIONS_TTL = 2.0  # seconds; one `show sessions` serves every poller in that window
+WEB_DIR = Path(os.environ.get("BNG_WEB_DIR", "/opt/bng-platform/web"))
+CSP = ("default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+       "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
 # which permission a change to each top-level config key needs (besides apply_config)
 SECTION_PERMISSION = {"shaper": "change_qos", "radius": "change_radius", "aaa": "change_radius",
@@ -57,6 +64,9 @@ class Node:
         self.mgr = ConfigManager(paths, self.service, lambda c: health.critical_failures(c, self.accel))
         self._cache: tuple[float, list[dict]] = (0.0, [])
         self._lock = threading.Lock()
+        self.rates, self.host_rates = SessionRates(), HostRates()
+        self._live: tuple[float, dict | None] = (0.0, None)
+        self._live_lock = threading.Lock()
 
     def config(self) -> BngConfig:
         return load(self.paths.config)
@@ -73,6 +83,7 @@ class Node:
             if time.monotonic() - t > SESSIONS_TTL:
                 rows = [_session(r) for r in self.accel.sessions()]
                 _mark_duplicates(rows)
+                self.rates.update(rows)
                 self._cache = (time.monotonic(), rows)
             return rows
 
@@ -80,9 +91,56 @@ class Node:
         with self._lock:
             self._cache = (0.0, [])
 
+    def live(self) -> dict:
+        """Dashboard snapshot, built at most once per SESSIONS_TTL for all viewers."""
+        with self._live_lock:
+            t, snap = self._live
+            if snap is None or time.monotonic() - t > SESSIONS_TTL:
+                snap = self._snapshot()
+                self._live = (time.monotonic(), snap)
+            return snap
+
+    def _snapshot(self) -> dict:
+        cfg = self.config()
+        snap: dict = {"timestamp": time.time(), "node": cfg.node, "uplink": cfg.uplink,
+                      "accel_active": self.service.is_active(), "accel_error": None}
+        try:
+            stat, rows = self.accel.stat_dict(), self.sessions()
+        except AccelError as e:
+            stat, rows, snap["accel_error"] = {}, [], str(e)
+        active = [r for r in rows if r["state"] == "active"]
+        snap["accel"] = {k: stat.get(k) for k in ("uptime", "cpu", "mem(rss/virt)", "sessions", "pppoe")}
+        snap["sessions"] = {
+            "total": len(rows), "active": len(active), "duplicates": sum(r["duplicate"] for r in rows),
+            "unshaped": sum(1 for r in active if r["rate_down_kbit"] is None),
+            "download_mbps": round(sum(r["download_mbps"] or 0 for r in rows), 3),
+            "upload_mbps": round(sum(r["upload_mbps"] or 0 for r in rows), 3),
+            **self.rates.per_minute(),
+        }
+        try:
+            nics = list_interfaces()
+        except OSError:
+            nics = []
+        host = {**_host(), **self.host_rates.update(nics)}
+        snap["nics"] = host.pop("nics")
+        snap["host"] = host
+        snap["conntrack"] = {k: _int((_proc(f"/proc/sys/net/netfilter/nf_conntrack_{k}") or "").strip())
+                             for k in ("count", "max")}
+        try:
+            snap["nat"] = firewall.nat_counters()
+        except OSError:
+            snap["nat"] = []
+        return snap
+
 
 def _int(s: str) -> int | None:
     return int(s) if s.isdigit() else None
+
+
+def _vlan(ifname: str) -> int | None:
+    """ens18.4044 -> 4044 (the naming bng-platform and netplan use for VLAN interfaces)."""
+    base, dot, tag = ifname.rpartition(".")
+    return int(tag) if dot and base and tag.isdigit() else None
 
 
 def _session(r: dict) -> dict:
@@ -92,8 +150,10 @@ def _session(r: dict) -> dict:
     return {
         "sid": r["sid"], "username": r["username"], "ip": r["ip"] or None, "ip6": r["ip6"] or None,
         "ip6_delegated": r["ip6-dp"] or None, "mac": r["calling-sid"], "called_sid": r["called-sid"],
-        "ifname": r["ifname"], "state": r["state"], "uptime_s": _int(r["uptime-raw"]),
+        "ifname": r["ifname"], "inbound_if": r["inbound-if"] or None, "vlan": _vlan(r["inbound-if"]),
+        "state": r["state"], "uptime_s": _int(r["uptime-raw"]),
         "upload_bytes": _int(r["rx-bytes-raw"]), "download_bytes": _int(r["tx-bytes-raw"]),
+        "upload_packets": _int(r["rx-pkts"]), "download_packets": _int(r["tx-pkts"]),
         "rate_limit": r["rate-limit"] or None,
         "rate_down_kbit": _int(down), "rate_up_kbit": _int(up) if up else _int(down),
         "duplicate": False,
@@ -162,8 +222,27 @@ class DisconnectIn(BaseModel):
 
 
 class ConfigIn(BaseModel):
-    config: dict
+    """Either `config` (JSON) or `yaml` (text, kept verbatim so comments survive)."""
+    config: dict | None = None
+    yaml: str | None = Field(default=None, max_length=200_000)
     allow_restart: bool = False
+
+    @model_validator(mode="after")
+    def _one(self) -> "ConfigIn":
+        if (self.config is None) == (self.yaml is None):
+            raise ValueError("send exactly one of config / yaml")
+        return self
+
+    def parsed(self) -> tuple[dict, str | None]:
+        if self.yaml is None:
+            return self.config, None
+        try:
+            data = yaml.safe_load(self.yaml)
+        except yaml.YAMLError as e:
+            raise HTTPException(422, f"YAML: {e}") from e
+        if not isinstance(data, dict):
+            raise HTTPException(422, "YAML must be a mapping")
+        return data, self.yaml
 
 
 class RollbackIn(BaseModel):
@@ -226,6 +305,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        if not request.url.path.startswith("/api/"):
+            response.headers["Content-Security-Policy"] = CSP
         return response
 
     @app.exception_handler(OperationalError)
@@ -301,20 +382,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     @app.get("/api/metrics", tags=["system"])
     def metrics(node: Node = Depends(the_node), _: Principal = Depends(require())):
-        """Point-in-time counters for dashboards; long-term series belong in Prometheus/Zabbix."""
-        cfg = node.config()
-        stat, rows = _stat(node), node.sessions()
-        uplink = next((n for n in list_interfaces() if n["name"] == cfg.uplink), None)
-        ct = {k: _int((_proc(f"/proc/sys/net/netfilter/nf_conntrack_{k}") or "").strip()) for k in ("count", "max")}
-        try:
-            nat = firewall.nat_counters()
-        except OSError:
-            nat = []
-        return {"timestamp": time.time(), "sessions": stat.get("sessions", {}),
-                "pppoe": stat.get("pppoe", {}),
-                "subscriber_upload_bytes": sum(r["upload_bytes"] or 0 for r in rows),
-                "subscriber_download_bytes": sum(r["download_bytes"] or 0 for r in rows),
-                "uplink": uplink, "conntrack": ct, "nat": nat}
+        """Live snapshot (rates over the last ~2 s); long-term series belong in Prometheus/Zabbix."""
+        return node.live()
 
     # --- sessions ---------------------------------------------------------
     @app.get("/api/sessions", tags=["sessions"])
@@ -323,7 +392,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
                                             description="substring of username, IP, MAC or interface"),
                  state: Literal["start", "active", "finish"] | None = None,
                  duplicates: bool = False,
-                 sort: Literal["username", "ip", "uptime_s", "upload_bytes", "download_bytes"] = "username",
+                 sort: Literal["username", "ip", "uptime_s", "upload_bytes", "download_bytes", "download_mbps",
+                               "upload_mbps", "peak_download_mbps", "peak_upload_mbps", "vlan"] = "username",
                  desc: bool = False,
                  page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=1000)):
         try:
@@ -436,8 +506,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
     @app.get("/api/config", tags=["config"])
     def config(node: Node = Depends(the_node), _: Principal = Depends(require())):
         hist = node.mgr.history()
-        return {"version": hist[-1]["version"] if hist else None,
-                "config": yaml.safe_load(node.paths.config.read_text(encoding="utf-8"))}
+        text = node.paths.config.read_text(encoding="utf-8")
+        return {"version": hist[-1]["version"] if hist else None, "config": yaml.safe_load(text), "yaml": text}
 
     @app.get("/api/config/history", tags=["config"])
     def config_history(node: Node = Depends(the_node), _: Principal = Depends(require())):
@@ -469,8 +539,9 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     @app.post("/api/config/validate", tags=["config"])
     def config_validate(body: ConfigIn, node: Node = Depends(the_node), p: Principal = Depends(require())):
-        cfg = _model(body.config)
-        with _candidate(node, body.config) as f:
+        data, text = body.parsed()
+        cfg = _model(data)
+        with _candidate(node, data, text) as f:
             try:
                 diff = node.mgr.diff(f)
             except ApplyError as e:
@@ -482,7 +553,8 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
     @app.post("/api/config/apply", tags=["config"])
     def config_apply(body: ConfigIn, node: Node = Depends(the_node),
                      p: Principal = Depends(require("apply_config")), db: Session = Depends(get_db)):
-        return _apply(node, db, p, body.config, body.allow_restart)
+        data, text = body.parsed()
+        return _apply(node, db, p, data, body.allow_restart, text)
 
     @app.post("/api/config/rollback", tags=["config"])
     def config_rollback(body: RollbackIn = Body(RollbackIn()), node: Node = Depends(the_node),
@@ -556,6 +628,110 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         audit(db, "user_update", "ok", admin=p.username, ip=p.ip, target=username, **changes)
         return _user(u)
 
+    # --- live updates (WebSocket) -----------------------------------------
+    async def ws_principal(ws: WebSocket, perm: str | None = None) -> Principal | None:
+        """Cookie auth on the handshake; the Origin must be this host (no cross-site sockets)."""
+        origin = ws.headers.get("origin", "")
+        if origin.split("://", 1)[-1] != ws.headers.get("host"):
+            await ws.close(code=1008)
+            return None
+        maker = ws.app.state.sessionmaker
+
+        def check() -> Principal:
+            with maker() as db:
+                return auth.authenticate(ws, db)
+        try:
+            p = await run_in_threadpool(check)
+        except (HTTPException, OperationalError):
+            p = None
+        if p is None or (perm and perm not in p.permissions):
+            await ws.close(code=1008)
+            return None
+        return p
+
+    async def ws_loop(ws: WebSocket, perm: str | None, interval: float, produce, on_message=None):
+        if not await ws_principal(ws, perm):
+            return
+        await ws.accept()
+
+        async def reader():
+            while True:
+                msg = await ws.receive_json()
+                if on_message:
+                    on_message(msg)
+        task = asyncio.create_task(reader())
+        try:
+            n = 0
+            while not task.done():
+                if n and n % 30 == 0 and not await ws_principal(ws, perm):  # logout/expiry ends the stream
+                    return
+                payload = await run_in_threadpool(produce)
+                if payload is not None:
+                    await ws.send_json(payload)
+                n += 1
+                await asyncio.sleep(interval)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            task.cancel()
+
+    @app.websocket("/api/ws/metrics")
+    async def ws_metrics(ws: WebSocket):
+        """Dashboard snapshot every 2 s (same data as GET /api/metrics)."""
+        await ws_loop(ws, None, SESSIONS_TTL, ws.app.state.node.live)
+
+    @app.websocket("/api/ws/system")
+    async def ws_system(ws: WebSocket):
+        """Health checks every 15 s."""
+        node = ws.app.state.node
+
+        def produce():
+            checks = health.run_all(node.config(), node.accel, node.secret(), ws.app.state.db_url)
+            return {"timestamp": time.time(), "checks": [_check(c) for c in checks]}
+        await ws_loop(ws, None, 15.0, produce)
+
+    @app.websocket("/api/ws/sessions")
+    async def ws_sessions(ws: WebSocket):
+        """Incremental: the client sends {"sids": [...]} for the rows it shows (max 1000);
+        every 2 s it gets only those rows whose counters/state changed, plus sids that ended."""
+        node = ws.app.state.node
+        watch: set[str] = set()
+        sent: dict[str, tuple] = {}
+        fields = ("state", "uptime_s", "upload_bytes", "download_bytes", "upload_mbps", "download_mbps",
+                  "peak_upload_mbps", "peak_download_mbps")
+
+        def on_message(msg):
+            sids = msg.get("sids") if isinstance(msg, dict) else None
+            if isinstance(sids, list):
+                watch.clear()
+                watch.update(x for x in sids[:1000] if isinstance(x, str) and SID_RE.match(x))
+                sent.clear()
+
+        def produce():
+            try:
+                rows = {r["sid"]: r for r in node.sessions()}
+            except AccelError:
+                return None
+            updates = []
+            for sid in list(watch):
+                r = rows.get(sid)
+                vals = tuple(r[f] for f in fields) if r else None
+                if vals != sent.get(sid, ()):
+                    sent[sid] = vals
+                    updates.append({"sid": sid, **dict(zip(fields, vals))} if r else {"sid": sid, "gone": True})
+            return {"timestamp": time.time(), "total": len(rows), "updates": updates}
+        await ws_loop(ws, "view_sessions", SESSIONS_TTL, produce, on_message)
+
+    # --- web GUI (built React app); registered last so /api/* always wins ----
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str):
+        if path.startswith("api/") or not WEB_DIR.is_dir():
+            raise HTTPException(404)
+        f = (WEB_DIR / path).resolve()
+        if path and f.is_file() and f.is_relative_to(WEB_DIR.resolve()):
+            return FileResponse(f)
+        return FileResponse(WEB_DIR / "index.html")  # client-side route
+
     return app
 
 
@@ -589,19 +765,19 @@ def _needed(changed: set[str]) -> set[str]:
 
 
 @contextlib.contextmanager
-def _candidate(node: Node, data: dict):
+def _candidate(node: Node, data: dict, text: str | None = None):
     """The candidate as a root-only (mkstemp: 0600) YAML file, for ConfigManager."""
     node.paths.state.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix="api-candidate-", suffix=".yaml", dir=node.paths.state)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+        f.write(text) if text is not None else yaml.safe_dump(data, f, sort_keys=False)
     try:
         yield Path(name)
     finally:
         Path(name).unlink(missing_ok=True)
 
 
-def _apply(node: Node, db: Session, p: Principal, data: dict, allow_restart: bool) -> dict:
+def _apply(node: Node, db: Session, p: Principal, data: dict, allow_restart: bool, text: str | None = None) -> dict:
     cfg = _model(data)
     changed = _changed(node, cfg)
     if not changed:  # same settings; don't rewrite the operator's YAML (comments) into a new version
@@ -609,7 +785,7 @@ def _apply(node: Node, db: Session, p: Principal, data: dict, allow_restart: boo
     missing = _needed(changed) - p.permissions
     if missing:
         raise HTTPException(403, f"changing {', '.join(sorted(changed))} needs {', '.join(sorted(missing))}")
-    with _candidate(node, data) as f:
+    with _candidate(node, data, text) as f:
         try:
             result = node.mgr.apply(f, p.username, f"api:{p.ip}", allow_restart)
         except ApplyError as e:

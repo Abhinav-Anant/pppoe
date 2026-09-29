@@ -168,7 +168,7 @@ def authenticate(request: Request, db: Session) -> Principal:
     admin = db.get(Admin, s.admin_id) if s else None
     if not admin or admin.disabled:
         raise HTTPException(401, "not logged in")
-    if request.method not in ("GET", "HEAD", "OPTIONS"):
+    if request.scope["type"] == "http" and request.method not in ("GET", "HEAD", "OPTIONS"):
         sent = request.headers.get("x-csrf-token", "")
         if not hmac.compare_digest(_sha(sent), s.csrf_hash):
             raise HTTPException(403, "missing or wrong X-CSRF-Token")

@@ -19,8 +19,8 @@ class AccelError(RuntimeError):
 SID_RE = re.compile(r"^[0-9A-Za-z]{1,32}$")
 # username is last: the subscriber chooses it and may put '|' in it;
 # splitting with maxsplit keeps it whole in the final column.
-SESSION_COLUMNS = ("sid", "ifname", "ip", "ip6", "ip6-dp", "calling-sid", "called-sid", "state",
-                   "uptime-raw", "rx-bytes-raw", "tx-bytes-raw", "rate-limit", "username")
+SESSION_COLUMNS = ("sid", "ifname", "inbound-if", "ip", "ip6", "ip6-dp", "calling-sid", "called-sid", "state",
+                   "uptime-raw", "rx-bytes-raw", "tx-bytes-raw", "rx-pkts", "tx-pkts", "rate-limit", "username")
 _NO_SPACE = re.compile(r"^\S+$")
 
 
