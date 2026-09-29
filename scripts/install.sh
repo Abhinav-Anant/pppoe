@@ -60,6 +60,7 @@ log "bngctl"
 python3 -m venv "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q --upgrade pip
 "$PREFIX/venv/bin/pip" install -q "$SRC/backend"
+"$PREFIX/venv/bin/pip" install -q --force-reinstall --no-deps "$SRC/backend"   # pick up code changes on re-install
 ln -sf "$PREFIX/venv/bin/bngctl" /usr/local/sbin/bngctl
 
 log "Configuration"
