@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from app.config.model import BngConfig
 from app.monitoring import health
@@ -46,3 +47,12 @@ def test_parse_nat_counters():
 
 def test_nat_health_skip_without_nat(base_cfg):
     assert health.check_nat(BngConfig.model_validate(base_cfg)).status == "SKIP"
+
+
+REAL = Path(__file__).parent / "fixtures" / "nft_bng_nat.json"
+
+
+def test_parse_real_nft_json():
+    # captured on bng01 (nftables 1.0.9) after the lab NAT test
+    [c] = firewall.parse_nat_counters(REAL.read_text())
+    assert c["pool"] == "lab" and c["packets"] > 0 and c["bytes"] > 0

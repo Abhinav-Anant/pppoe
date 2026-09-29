@@ -37,6 +37,20 @@ Unknown keys are rejected. Every string that reaches accel-ppp.conf is restricte
 | `shaper.attr` / `vendor` | `Filter-Id` / none | `[shaper] attr` / `vendor` |
 | `shaper.down_limiter` / `up_limiter` | `tbf` / `police` | `[shaper]` |
 
+### NAT (`nat:`)
+
+| Key | Type / default | Effect |
+|---|---|---|
+| `nat.pools[].name` | token | rule comment `nat-pool <name>` |
+| `nat.pools[].subscribers` | CIDRs, non-overlapping across pools | SNAT match + forward allow-list |
+| `nat.pools[].public_start` / `public_end` | IPv4 range, outside subscriber space | SNAT address range |
+| `nat.pools[].port_min` / `port_max` | `1024` / `65535` | SNAT port range (TCP/UDP) |
+| `nat.mss_clamp` | bool, `true` | clamp TCP MSS to route MTU in forward |
+
+Rendered into the same nftables file as the host firewall and applied with
+`sudo bngctl firewall apply` + confirm from a new SSH session (120 s auto-revert).
+`sudo bngctl nat status` shows forwarding, conntrack usage and per-pool counters.
+
 `[modules]`, `[core]` and `[cli]` are read only at daemon start. A change there needs an
 accel-ppp restart, which disconnects every subscriber, so apply refuses it unless
 `--allow-restart` is given. Everything else is applied with `accel-cmd reload`; established

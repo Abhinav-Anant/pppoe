@@ -111,7 +111,9 @@ def apply(cfg: BngConfig) -> None:
     PENDING.write_text(render(cfg))
     _run("nft", "-c", "-f", str(PENDING))
     _disarm()
-    _run("systemd-run", f"--unit={REVERT_UNIT}", f"--on-active={CONFIRM_SECONDS}", "/bin/sh", "-c", REVERT_SCRIPT)
+    # default timer AccuracySec is 1 min, which let the revert fire up to 60 s late on bng01
+    _run("systemd-run", f"--unit={REVERT_UNIT}", f"--on-active={CONFIRM_SECONDS}",
+         "--timer-property=AccuracySec=1s", "/bin/sh", "-c", REVERT_SCRIPT)
     try:
         _run("nft", "-f", str(PENDING))
     except RuntimeError:
