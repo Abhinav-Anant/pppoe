@@ -113,3 +113,10 @@ def test_parse_cake_json_absent():
 def test_health_cake_skip_without_qos(base_cfg):
     from app.monitoring import health
     assert health.check_cake(BngConfig.model_validate(base_cfg)).status == "SKIP"
+
+
+def test_parse_real_tc_json():
+    # captured on bng01 (iproute2 6.1) from the IFB download queue after a 100 Mbit load test
+    from pathlib import Path
+    s = cake.parse_cake_json((Path(__file__).parent / "fixtures" / "tc_cake_ifb.json").read_text())
+    assert s["bandwidth_mbit"] == 100.0 and s["drops"] > 0 and s["packets"] > 0
