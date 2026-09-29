@@ -23,7 +23,7 @@ If the management plane is stopped or removed, established PPPoE sessions keep f
 |---|---|---|
 | 1 | ACCEL-PPP, PPPoE, RADIUS config, IP pools, per-session shaping, safe config apply, health, CLI | done in lab; Jaze verification open |
 | 2 | nftables CGNAT, forward filter, MSS clamp, conntrack | done in lab (`docs/phase2-results.md`); NAT logging designed |
-| 3 | CAKE / cake_mq, direction handling, IFB | pending |
+| 3 | CAKE, direction handling via IFB, capability detection | demonstrated in lab (`docs/phase3-results.md`); disabled until contracted rate known; cake_mq unavailable on this kernel |
 | 4 | Gold/Silver/Bronze tiers via nft marks | pending |
 | 5 | FastAPI management API | pending |
 | 6 | Web GUI | pending |
