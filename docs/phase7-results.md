@@ -10,7 +10,7 @@ physical or virtual BNG is still open.
 
 ## Unit tests
 
-118 total, all pass. The Phase 7 tests cover:
+117 total, all pass. The Phase 7 tests cover:
 - Bearer tokens: no CSRF needed; the acting role narrows the token and can't widen it; bad or
   revoked tokens are refused; `/api/auth/me` works for a token and password change is refused.
 - The node registry: permissions, https-only URLs, fingerprint mismatch.
