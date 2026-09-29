@@ -149,6 +149,44 @@ class Nat(Strict):
         return self
 
 
+Isolation = Literal["flowblind", "srchost", "dsthost", "hosts", "flows",
+                    "dual-srchost", "dual-dsthost", "triple-isolate"]
+
+
+class CakeDirection(Strict):
+    bandwidth_mbit: int = Field(ge=1, le=400_000)
+    diffserv: Literal["besteffort", "diffserv3", "diffserv4", "diffserv8"] = "besteffort"
+    isolation: Isolation | None = None        # None: direction default (see Cake)
+    ack_filter: Literal["no-ack-filter", "ack-filter", "ack-filter-aggressive"] = "no-ack-filter"
+
+
+class Cake(Strict):
+    """Aggregate CAKE on the uplink. upload = Customer->Internet (uplink egress),
+    download = Internet->Customer (uplink ingress via IFB). CAKE has no ECN switch:
+    it always ECN-marks ECN-capable flows, so none is offered."""
+    enabled: bool = True
+    mode: Literal["cake", "cake_mq"] = "cake"
+    rtt_ms: int = Field(default=100, ge=1, le=10_000)
+    overhead: int | None = Field(default=None, ge=-64, le=256)   # None = raw
+    mpu: int | None = Field(default=None, ge=0, le=256)
+    link_layer: Literal["noatm", "atm", "ptm"] = "noatm"
+    nat: bool = True
+    wash: bool = False
+    upload: CakeDirection
+    download: CakeDirection
+
+    @model_validator(mode="after")
+    def _isolation_defaults(self) -> Cake:
+        # nat + dual-*host: fairness per subscriber (private address), then per flow
+        self.upload.isolation = self.upload.isolation or "dual-srchost"
+        self.download.isolation = self.download.isolation or "dual-dsthost"
+        return self
+
+
+class Qos(Strict):
+    cake: Cake
+
+
 class BngConfig(Strict):
     node: str = Field(pattern=TOKEN)
     aaa: Literal["radius", "lab"]
@@ -161,6 +199,7 @@ class BngConfig(Strict):
     radius: Radius | None = None
     shaper: Shaper | None = Shaper()
     nat: Nat | None = None
+    qos: Qos | None = None
 
     @model_validator(mode="after")
     def _aaa(self) -> BngConfig:
