@@ -3,6 +3,17 @@
 
 let csrf = "";
 let onUnauthorized: () => void = () => {};
+let remoteNode: string | null = null;
+
+// Remote BNG selected: the same API paths go through this console's proxy,
+// /api/x -> /api/nodes/<node>/x (login, node and fleet management stay local).
+export function setRemoteNode(name: string | null) {
+  remoteNode = name;
+}
+export function nodePath(path: string): string {
+  if (!remoteNode || !path.startsWith("/api/") || /^\/api\/(auth|nodes|fleet)(\/|$|\?)/.test(path)) return path;
+  return `/api/nodes/${encodeURIComponent(remoteNode)}/${path.slice(5)}`;
+}
 
 export function setCsrf(token: string) {
   csrf = token;
@@ -35,7 +46,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(init.json);
   }
-  const r = await fetch(path, { ...init, method, headers, body, credentials: "same-origin" });
+  const r = await fetch(nodePath(path), { ...init, method, headers, body, credentials: "same-origin" });
   const text = await r.text();
   const data = text && r.headers.get("content-type")?.includes("json") ? JSON.parse(text) : text;
   if (r.status === 401 && !path.startsWith("/api/auth/login")) onUnauthorized();

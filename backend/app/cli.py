@@ -21,6 +21,7 @@ from app.networking import firewall, guard
 from app.networking.interfaces import list_interfaces
 from app.radius import probe
 
+TLS_CERT = Path("/etc/bng-platform/tls/api.crt")
 SEARCH_RE = re.compile(r"^[A-Za-z0-9_.@:\-]{1,64}$")
 
 
@@ -105,6 +106,13 @@ def _parser() -> argparse.ArgumentParser:
             x.add_argument("--role", required=True)
         if name in ("create", "passwd"):
             x.add_argument("--password-stdin", action="store_true", help="read the password from stdin")
+    tok = sub.add_parser("token", help="service tokens for a central console").add_subparsers(dest="action", required=True)
+    tok.add_parser("list")
+    x = tok.add_parser("create")
+    x.add_argument("name")
+    x.add_argument("--role", required=True)
+    tok.add_parser("revoke").add_argument("name")
+    sub.add_parser("tls").add_subparsers(dest="action", required=True).add_parser("fingerprint")
     return p
 
 
@@ -257,7 +265,12 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
         mgr.audit(**who, action=f"firewall_{a.action}", result="ok")
         return 0
 
-    if a.cmd in ("db", "admin"):
+    if a.cmd == "tls":
+        from app.api.fleet import fingerprint
+        print(f"{fingerprint(TLS_CERT.read_text())}  {TLS_CERT}")
+        return 0
+
+    if a.cmd in ("db", "admin", "token"):
         _require_root()
         url = _db_url()
         if not url:
@@ -289,6 +302,8 @@ def _manage(a, url: str, who: dict) -> int:
         db.upgrade(url)
         print("database schema is current")
         return 0
+    if a.cmd == "token":
+        return _tokens(a, url, who)
     with db.make_sessionmaker(url)() as s:
         if a.action == "list":
             for u in s.scalars(select(db.Admin).order_by(db.Admin.username)):
@@ -317,3 +332,39 @@ def _manage(a, url: str, who: dict) -> int:
         auth.audit(s, f"admin_{a.action}", "ok", admin=who["admin"], ip=who["source"], target=a.username)
     print(f"admin {a.username}: {a.action} done")
     return 0
+
+
+def _tokens(a, url: str, who: dict) -> int:
+    from sqlalchemy import select
+
+    from app import db
+    from app.api import auth
+
+    with db.make_sessionmaker(url)() as s:
+        if a.action == "list":
+            for t in s.scalars(select(db.ApiToken).order_by(db.ApiToken.name)):
+                print(f"{t.name:<24}{t.role:<16}{'revoked' if t.disabled else 'active':<10}"
+                      f"last used {t.last_used_at or 'never'}")
+            return 0
+        if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,64}", a.name):
+            raise ValueError("token name may contain only letters, digits and _.-")
+        t = s.scalar(select(db.ApiToken).where(db.ApiToken.name == a.name))
+        if a.action == "create":
+            if t:
+                raise ValueError(f"token {a.name} exists (revoke it first)")
+            if a.role not in auth.ROLES:
+                raise ValueError(f"role must be one of {', '.join(auth.ROLES)}")
+            token, digest = auth.new_token()
+            s.add(db.ApiToken(name=a.name, role=a.role, token_hash=digest))
+            s.commit()
+            auth.audit(s, "token_create", "ok", admin=who["admin"], ip=who["source"], target=a.name, role=a.role)
+            print(token)
+            print(f"# shown once; give it to the console that registers this node (role {a.role})", file=sys.stderr)
+            return 0
+        if not t:
+            raise ValueError(f"no token {a.name}")
+        s.delete(t)
+        s.commit()
+        auth.audit(s, "token_revoke", "ok", admin=who["admin"], ip=who["source"], target=a.name)
+        print(f"token {a.name} revoked")
+        return 0

@@ -60,6 +60,29 @@ class AuditLog(Base):
     detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+class ApiToken(Base):
+    """Service token (Authorization: Bearer) - how a central console calls this node."""
+    __tablename__ = "api_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    role: Mapped[str] = mapped_column(String(32))
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BngNode(Base):
+    """A remote BNG this console manages. Its token lives in secrets/nodes/<name>.token,
+    not here; `fingerprint` pins the SHA-256 of the node's TLS certificate."""
+    __tablename__ = "bng_nodes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    url: Mapped[str] = mapped_column(String(255))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def db_url() -> str | None:
     """BNG_DB_URL, else the root-only secrets file written by install.sh."""
     if url := os.environ.get("BNG_DB_URL"):

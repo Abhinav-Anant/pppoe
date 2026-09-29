@@ -10,6 +10,11 @@ export const useCan = () => {
   return (perm: string) => me.permissions.includes(perm);
 };
 
+// ---- selected BNG -------------------------------------------------------------
+export interface NodeInfo { name: string; local: boolean; url: string | null; fingerprint: string | null }
+export const NodeContext = createContext<{ nodes: NodeInfo[]; node: NodeInfo | null; select: (name: string) => void; reloadNodes: () => void }>(null!);
+export const useNode = () => useContext(NodeContext);
+
 // ---- live metrics --------------------------------------------------------------
 // One /api/ws/metrics socket for the whole app; the last 15 minutes are kept in the
 // browser for the monitoring graphs (longer history belongs in Prometheus/Zabbix).

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { nodePath } from "../api/client";
 
 // JSON WebSocket to bng-api with reconnect (backoff up to 10 s). `send` is kept for
 // the session subscription; messages sent while disconnected are replayed on connect.
@@ -14,7 +15,7 @@ export function useSocket<T>(path: string, onMessage: (msg: T) => void, initial?
     let delay = 1000;
     let timer: number | undefined;
     const connect = () => {
-      const s = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`);
+      const s = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${nodePath(path)}`);
       ws.current = s;
       s.onopen = () => {
         setConnected(true);

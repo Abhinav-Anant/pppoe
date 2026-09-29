@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { get, post } from "../api/client";
+import { get, nodePath, post } from "../api/client";
 import type { Version } from "../api/types";
 import { useCan } from "../components/context";
 import { Badge, Button, Card, Empty, ErrorNote, fmtTime, PageHeader, T } from "../components/ui";
@@ -133,7 +133,7 @@ function History() {
                   <td className={T.td}>{v.admin}</td>
                   <td className={`${T.td} font-mono text-zinc-400`}>{v.source}</td>
                   <td className={`${T.td} text-right`} onClick={(e) => e.stopPropagation()}>
-                    <a className="mr-2 text-sky-400 hover:underline" href={`/api/config/versions/${v.version}`} download>download</a>
+                    <a className="mr-2 text-sky-400 hover:underline" href={nodePath(`/api/config/versions/${v.version}`)} download>download</a>
                     {can("rollback_config") && i > 0 && <Button className="px-1.5 py-0" onClick={() => rollback(v.version)}>Roll back</Button>}
                   </td>
                 </tr>

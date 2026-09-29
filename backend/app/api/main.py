@@ -31,7 +31,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.accel.cmd import SID_RE, AccelCmd, AccelError, AccelService
-from app.api import auth
+from app.api import auth, easywall, fleet
 from app.api.auth import Principal, audit, get_db, require
 from app.config.manager import ApplyError, ConfigManager, Paths
 from app.config.model import BngConfig, Shaper, load
@@ -47,7 +47,7 @@ USERNAME = r"^[A-Za-z0-9_.@\-]{1,64}$"
 SESSIONS_TTL = 2.0  # seconds; one `show sessions` serves every poller in that window
 WEB_DIR = Path(os.environ.get("BNG_WEB_DIR", "/opt/bng-platform/web"))
 CSP = ("default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-       "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+       "frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
 # which permission a change to each top-level config key needs (besides apply_config)
 SECTION_PERMISSION = {"shaper": "change_qos", "radius": "change_radius", "aaa": "change_radius",
@@ -304,8 +304,11 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        path = request.url.path
+        if path == easywall.PREFIX or path.startswith(easywall.PREFIX + "/"):
+            return response  # easywall's own CSP (+ frame-ancestors 'self'), set by the proxy
         response.headers["X-Frame-Options"] = "DENY"
-        if not request.url.path.startswith("/api/"):
+        if not path.startswith("/api/"):
             response.headers["Content-Security-Policy"] = CSP
         return response
 
@@ -328,7 +331,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
             raise HTTPException(403, "missing X-Requested-With: bng")
         admin, token, csrf = auth.login(db, body.username, body.password, auth.client_ip(request))
         response.set_cookie(auth.COOKIE, token, httponly=True, samesite="strict",
-                            secure=request.app.state.cookie_secure, path="/api",
+                            secure=request.app.state.cookie_secure, path="/",
                             max_age=int(auth.ABSOLUTE.total_seconds()))
         return {"username": admin.username, "role": admin.role, "csrf_token": csrf,
                 "permissions": sorted(auth.ROLES[admin.role])}
@@ -338,7 +341,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
                db: Session = Depends(get_db)):
         auth.logout(db, request.cookies.get(auth.COOKIE, ""))
         audit(db, "logout", "ok", admin=p.username, ip=p.ip)
-        response.delete_cookie(auth.COOKIE, path="/api")
+        response.delete_cookie(auth.COOKIE, path="/")
         return {"ok": True}
 
     @app.get("/api/auth/me", tags=["auth"])
@@ -630,9 +633,10 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     # --- live updates (WebSocket) -----------------------------------------
     async def ws_principal(ws: WebSocket, perm: str | None = None) -> Principal | None:
-        """Cookie auth on the handshake; the Origin must be this host (no cross-site sockets)."""
+        """Cookie auth on the handshake; a browser's Origin must be this host (no cross-site
+        sockets). Browsers always send Origin; a console calling with a Bearer token does not."""
         origin = ws.headers.get("origin", "")
-        if origin.split("://", 1)[-1] != ws.headers.get("host"):
+        if origin and origin.split("://", 1)[-1] != ws.headers.get("host"):
             await ws.close(code=1008)
             return None
         maker = ws.app.state.sessionmaker
@@ -722,10 +726,13 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
             return {"timestamp": time.time(), "total": len(rows), "updates": updates}
         await ws_loop(ws, "view_sessions", SESSIONS_TTL, produce, on_message)
 
+    easywall.add_routes(app)
+    fleet.add_routes(app, ws_principal)
+
     # --- web GUI (built React app); registered last so /api/* always wins ----
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
-        if path.startswith("api/") or not WEB_DIR.is_dir():
+        if path.startswith(("api/", "easywall/")) or not WEB_DIR.is_dir():
             raise HTTPException(404)
         f = (WEB_DIR / path).resolve()
         if path and f.is_file() and f.is_relative_to(WEB_DIR.resolve()):

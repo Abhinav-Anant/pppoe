@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from datetime import timedelta
 
@@ -20,10 +21,11 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db import Admin, AuditLog, AuthSession, now
+from app.db import Admin, ApiToken, AuditLog, AuthSession, now
 
 PERMISSIONS = ("view_sessions", "disconnect_sessions", "change_qos", "change_radius", "change_network",
-               "change_nat", "apply_config", "rollback_config", "view_logs", "manage_users")
+               "change_nat", "apply_config", "rollback_config", "view_logs", "manage_users",
+               "manage_firewall", "manage_nodes")
 ROLES: dict[str, frozenset[str]] = {
     "super_admin": frozenset(PERMISSIONS),
     "network_admin": frozenset(PERMISSIONS) - {"manage_users"},
@@ -147,9 +149,34 @@ def drop_other_sessions(db: Session, admin_id: int, keep_token: str) -> None:
 
 
 class Principal:
-    def __init__(self, admin: Admin, ip: str):
-        self.username, self.role, self.ip = admin.username, admin.role, ip
-        self.permissions = ROLES.get(admin.role, frozenset())
+    def __init__(self, username: str, role: str, ip: str, permissions: frozenset[str] | None = None):
+        self.username, self.role, self.ip = username, role, ip
+        self.permissions = ROLES.get(role, frozenset()) if permissions is None else permissions
+
+
+TOKEN_PREFIX = "bngt_"
+_ACTOR = re.compile(r"^[A-Za-z0-9_.@\-]{1,64}$")
+
+
+def new_token() -> tuple[str, str]:
+    """-> (token shown once, sha256 stored)."""
+    t = TOKEN_PREFIX + secrets.token_urlsafe(32)
+    return t, _sha(t)
+
+
+def _token_principal(request, db: Session, token: str) -> Principal:
+    """Bearer token of a central console. X-BNG-Admin / X-BNG-Role name the person acting
+    there; their role can only narrow what the token's role allows, never widen it."""
+    t = db.scalar(select(ApiToken).where(ApiToken.token_hash == _sha(token)))
+    if not t or t.disabled:
+        raise HTTPException(401, "invalid token")
+    perms, name, role = ROLES.get(t.role, frozenset()), f"token:{t.name}", t.role
+    actor, actor_role = request.headers.get("x-bng-admin", ""), request.headers.get("x-bng-role", "")
+    if actor and _ACTOR.match(actor) and actor_role in ROLES:
+        perms, name, role = perms & ROLES[actor_role], f"{actor}@{t.name}", actor_role
+    t.last_used_at = now()
+    db.commit()
+    return Principal(name, role, client_ip(request), perms)
 
 
 def _aware(dt):
@@ -157,7 +184,10 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=now().tzinfo)
 
 
-def authenticate(request: Request, db: Session) -> Principal:
+def authenticate(request: Request, db: Session, csrf: bool = True) -> Principal:
+    bearer = request.headers.get("authorization", "")
+    if bearer.startswith("Bearer "):  # not a cookie, so no CSRF exposure
+        return _token_principal(request, db, bearer[7:].strip())
     token = request.cookies.get(COOKIE)
     s = _session(db, token)
     t = now()
@@ -168,13 +198,13 @@ def authenticate(request: Request, db: Session) -> Principal:
     admin = db.get(Admin, s.admin_id) if s else None
     if not admin or admin.disabled:
         raise HTTPException(401, "not logged in")
-    if request.scope["type"] == "http" and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if csrf and request.scope["type"] == "http" and request.method not in ("GET", "HEAD", "OPTIONS"):
         sent = request.headers.get("x-csrf-token", "")
         if not hmac.compare_digest(_sha(sent), s.csrf_hash):
             raise HTTPException(403, "missing or wrong X-CSRF-Token")
     s.last_seen_at = t
     db.commit()
-    return Principal(admin, client_ip(request))
+    return Principal(admin.username, admin.role, client_ip(request))
 
 
 def require(*perms: str):

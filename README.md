@@ -27,7 +27,7 @@ If the management plane is stopped or removed, established PPPoE sessions keep f
 | 4 | Priority = plan rate from RADIUS (per-session shaper), rate guard; easywall host firewall | done in lab (`docs/rate-limits.md`, `docs/easywall.md`); Jaze attribute + easywall hand-over open |
 | 5 | FastAPI management API, RBAC, audit, PostgreSQL | done in lab (`docs/api.md`, `docs/phase5-results.md`) |
 | 6 | Web GUI (dashboard, sessions, QoS, NAT, RADIUS, config, monitoring), WebSockets | done in lab (`docs/gui.md`, `docs/phase6-results.md`) |
-| 7 | Multi-BNG | pending |
+| 7 | Multi-BNG (pinned-TLS node registry, service tokens, proxy, fleet compare/search); easywall console embedded | done in lab (`docs/multi-bng.md`, `docs/phase7-results.md`); second physical node not yet available |
 | 8 | Performance testing | pending |
 
 No subscriber-count or throughput capability is claimed until Phase 8 benchmarks on
@@ -40,6 +40,7 @@ appropriate hardware demonstrate it.
 - [docs/configuration.md](docs/configuration.md)
 - [docs/api.md](docs/api.md) — management API, roles, endpoints
 - [docs/gui.md](docs/gui.md) — web GUI: access, build, pages, live data
+- [docs/multi-bng.md](docs/multi-bng.md) — managing several BNGs from one console
 - [docs/phase1-results.md](docs/phase1-results.md)
 - [docs/phase5-results.md](docs/phase5-results.md)
 

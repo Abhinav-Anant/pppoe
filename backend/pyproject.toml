@@ -11,7 +11,7 @@ dependencies = ["pydantic>=2.5,<3", "PyYAML>=6"]
 [project.optional-dependencies]
 test = ["pytest>=8", "httpx>=0.27"]
 # management plane (bng-api, bngctl admin/db); the data plane never imports these
-api = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12", "SQLAlchemy>=2.0", "alembic>=1.13", "psycopg[binary]>=3.1"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12", "httpx>=0.27", "SQLAlchemy>=2.0", "alembic>=1.13", "psycopg[binary]>=3.1"]
 
 [project.scripts]
 bngctl = "app.cli:main"

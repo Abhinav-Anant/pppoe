@@ -10,9 +10,9 @@ if [ "$YES" -ne 1 ]; then
   [ "$ans" = y ] || exit 1
 fi
 bash "$(dirname "$0")/lab/lab-down.sh" || true
-systemctl disable --now bng-api.service 2>/dev/null || true
+systemctl disable --now bng-api.service bng-api-remote.service 2>/dev/null || true
 systemctl disable --now accel-ppp.service 2>/dev/null || true
-rm -f /etc/systemd/system/accel-ppp.service /etc/systemd/system/bng-api.service
+rm -f /etc/systemd/system/accel-ppp.service /etc/systemd/system/bng-api.service /etc/systemd/system/bng-api-remote.service
 systemctl daemon-reload
 if [ -f /opt/bng-platform/accel-ppp.manifest ]; then xargs -d '\n' rm -f < /opt/bng-platform/accel-ppp.manifest; fi
 nft delete table inet bng_filter 2>/dev/null || true

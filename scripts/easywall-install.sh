@@ -44,6 +44,7 @@ EOF
 apt-get install -y -q "$T/$DEB"
 systemctl is-active easywall-core easywall-web
 echo
-echo "UI: ssh -L 12227:localhost:12227 <this host>, then https://localhost:12227/firstrun"
-echo "setup token: sudo journalctl -u easywall-web -g 'setup token' | tail -1"
+echo "Next: re-run scripts/install.sh - it binds easywall-web to 127.0.0.1 and serves it inside the"
+echo "BNG console (Firewall page, /easywall/). First-run setup token:"
+echo "  sudo journalctl -u easywall-web -g 'setup token' | tail -1"
 echo "Open TCP 22 (and 3799/udp from Jaze for CoA) in easywall BEFORE setting firewall.host_input: easywall."

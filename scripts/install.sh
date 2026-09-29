@@ -116,6 +116,35 @@ else
   echo "  no frontend/dist in $SRC - API only"
 fi
 
+log "easywall web console"
+EWWEB=/etc/easywall/web.toml
+if [ -f "$EWWEB" ]; then
+  # Only the BNG console (bng-api, on loopback) may reach it: it is framed at /easywall/.
+  cp -a "$EWWEB" "$EWWEB.bng-backup"
+  sed -i -E 's|^bind_addr[[:space:]]*=.*|bind_addr   = "127.0.0.1:12227"   # bng-platform: reached via the BNG console|' "$EWWEB"
+  sed -i -E 's|^trusted_proxies[[:space:]]*=.*|trusted_proxies = ["127.0.0.1/32"]   # bng-api proxy sends X-Forwarded-For|' "$EWWEB"
+  if ! cmp -s "$EWWEB" "$EWWEB.bng-backup"; then systemctl restart easywall-web.service; fi
+  grep -E '^(bind_addr|trusted_proxies)' "$EWWEB" | sed 's/^/  /'
+else
+  echo "  easywall not installed"
+fi
+
+log "TLS listener for a central console (bng-api-remote, off until configured)"
+install -d -m 0755 "$ETC/tls"
+if [ ! -f "$ETC/tls/api.crt" ]; then
+  (umask 077; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+    -subj "/CN=$(hostname)" -keyout "$ETC/tls/api.key" -out "$ETC/tls/api.crt" 2>/dev/null)
+  chmod 0644 "$ETC/tls/api.crt"
+fi
+echo "  certificate fingerprint: $(bngctl tls fingerprint | cut -d' ' -f1)"
+install -m 0644 "$SRC/system/systemd/bng-api-remote.service" /etc/systemd/system/
+systemctl daemon-reload
+if [ -f "$ETC/api-remote.env" ]; then
+  systemctl enable bng-api-remote.service && systemctl restart bng-api-remote.service
+else
+  echo "  disabled: create $ETC/api-remote.env (see docs/multi-bng.md) to listen for a central console"
+fi
+
 log "bng-api"
 install -m 0644 "$SRC/system/systemd/bng-api.service" /etc/systemd/system/
 systemctl daemon-reload

@@ -1,8 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useAuth, useLive } from "./context";
+import { useAuth, useLive, useNode } from "./context";
 import { Badge, Dot } from "./ui";
 
 const NAV: [string, string, string?][] = [
+  ["/bng", "All BNGs"],
   ["/dashboard", "Dashboard"],
   ["/monitoring", "Monitoring"],
   ["/sessions", "Sessions", "view_sessions"],
@@ -11,6 +12,7 @@ const NAV: [string, string, string?][] = [
   ["/radius", "RADIUS"],
   ["/pppoe", "PPPoE & Pools"],
   ["/interfaces", "Interfaces"],
+  ["/firewall", "Firewall", "manage_firewall"],
   ["/configuration", "Configuration"],
   ["/audit", "Audit", "view_logs"],
   ["/users", "Users", "manage_users"],
@@ -20,15 +22,23 @@ const NAV: [string, string, string?][] = [
 export default function Layout() {
   const { me, logout } = useAuth();
   const { live, connected, checks } = useLive();
+  const { nodes, node, select } = useNode();
   const fails = (checks ?? []).filter((c) => c.status === "FAIL");
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-44 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
         <div className="border-b border-zinc-800 px-3 py-2.5">
           <div className="text-sm font-semibold tracking-wide text-zinc-100">BNG Console</div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
             <Dot tone={connected ? (live?.accel_active ? "ok" : "bad") : "dim"} />
-            {live?.node ?? "…"}
+            <select
+              aria-label="BNG node"
+              className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-[11px] text-zinc-200"
+              value={node?.name}
+              onChange={(e) => select(e.target.value)}
+            >
+              {nodes.map((n) => <option key={n.name} value={n.name}>{n.name}{n.local ? " (this node)" : ""}</option>)}
+            </select>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-1">
