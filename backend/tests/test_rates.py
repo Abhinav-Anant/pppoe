@@ -4,7 +4,7 @@ from app.monitoring import health
 
 class FakeAccel:
     def __init__(self, rates):
-        self.rows = [{"sid": f"s{i}", "username": f"u{i}", "rate-limit": r} for i, r in enumerate(rates)]
+        self.rows = [{"sid": f"s{i}", "username": f"u{i}", "state": "active", "rate-limit": r} for i, r in enumerate(rates)]
 
     def sessions(self, match=None):
         return self.rows
@@ -39,3 +39,10 @@ def test_missing_rate_allowed_by_default(base_cfg):
 def test_no_shaper_skips(base_cfg):
     base_cfg["shaper"] = None
     assert health.check_rates(BngConfig.model_validate(base_cfg), FakeAccel([])).status == "SKIP"
+
+
+def test_only_active_sessions_are_judged(base_cfg):
+    # bng01: a session in teardown had no rate yet and failed require_rate
+    a = FakeAccel(["", ""])
+    a.rows[0]["state"], a.rows[1]["state"] = "finishing", "start"
+    assert health.check_rates(cfg(base_cfg, require_rate=True), a).status == "PASS"

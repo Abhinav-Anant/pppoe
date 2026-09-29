@@ -131,7 +131,8 @@ def check_rates(cfg: BngConfig, accel) -> Check:
     if not s:
         return Check("Rate limits", "SKIP", "no shaper configured")
     try:
-        rows = accel.sessions()
+        # starting/finishing sessions have no shaper yet (seen on bng01 during teardown)
+        rows = [r for r in accel.sessions() if r["state"] == "active"]
     except AccelError as e:
         return Check("Rate limits", "FAIL", str(e))
     over, missing = [], []
