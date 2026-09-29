@@ -74,6 +74,7 @@ def test_nat_defaults_and_target(base_cfg):
     base_cfg["nat"] = NAT
     cfg = BngConfig.model_validate(base_cfg)
     assert cfg.nat.mss_clamp and cfg.nat.pools[0].snat_target() == "192.0.2.1:1024-65535"
+    assert cfg.nat.pools[0].public_range() == "192.0.2.1"
     assert [str(n) for n in cfg.subscriber_networks()] == ["100.64.0.0/24"]
 
 

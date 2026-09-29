@@ -58,10 +58,14 @@ def render(cfg: BngConfig) -> str:
         "}\n"
     )
     if cfg.nat:
-        rules = "".join(
-            f'        oifname "{up}" ip saddr {{ {", ".join(map(str, p.subscribers))} }} counter '
-            f'snat to {p.snat_target()} persistent comment "nat-pool {p.name}"\n'
-            for p in cfg.nat.pools)
+        # nft accepts a port range only after a transport-protocol match, so
+        # TCP/UDP get the port range and everything else (ICMP, GRE...) only the address.
+        rules = ""
+        for p in cfg.nat.pools:
+            match = f'        oifname "{up}" ip saddr {{ {", ".join(map(str, p.subscribers))} }} '
+            tag = f'persistent comment "nat-pool {p.name}"\n'
+            rules += (f"{match}meta l4proto {{ tcp, udp }} counter snat to {p.snat_target()} {tag}"
+                      f"{match}counter snat to {p.public_range()} {tag}")
         text += ("table ip bng_nat {\n"
                  "    chain postrouting {\n"
                  "        type nat hook postrouting priority srcnat; policy accept;\n"
@@ -72,15 +76,18 @@ def render(cfg: BngConfig) -> str:
 
 
 def parse_nat_counters(json_text: str) -> list[dict]:
-    out = []
+    """Per-pool totals (each pool has a TCP/UDP rule and an other-protocols rule)."""
+    pools: dict[str, dict] = {}
     for obj in json.loads(json_text).get("nftables", []):
         rule = obj.get("rule")
         if not rule or not rule.get("comment", "").startswith("nat-pool "):
             continue
         c = next((e["counter"] for e in rule["expr"] if "counter" in e), {})
-        out.append({"pool": rule["comment"].removeprefix("nat-pool "),
-                    "packets": c.get("packets", 0), "bytes": c.get("bytes", 0)})
-    return out
+        name = rule["comment"].removeprefix("nat-pool ")
+        acc = pools.setdefault(name, {"pool": name, "packets": 0, "bytes": 0})
+        acc["packets"] += c.get("packets", 0)
+        acc["bytes"] += c.get("bytes", 0)
+    return list(pools.values())
 
 
 def nat_counters() -> list[dict]:

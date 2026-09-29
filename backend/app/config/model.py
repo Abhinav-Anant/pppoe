@@ -125,10 +125,12 @@ class NatPool(Strict):
             raise ValueError(f"nat pool {self.name!r}: port_min is above port_max")
         return self
 
-    def snat_target(self) -> str:
+    def public_range(self) -> str:
         end = self.public_end if self.public_end not in (None, self.public_start) else None
-        ips = f"{self.public_start}-{end}" if end else str(self.public_start)
-        return f"{ips}:{self.port_min}-{self.port_max}"
+        return f"{self.public_start}-{end}" if end else str(self.public_start)
+
+    def snat_target(self) -> str:
+        return f"{self.public_range()}:{self.port_min}-{self.port_max}"
 
 
 class Nat(Strict):

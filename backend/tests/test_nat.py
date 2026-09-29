@@ -15,7 +15,10 @@ def test_render_forward_and_snat(base_cfg):
     assert "tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu" in fwd
     assert 'iifname "ppp*" oifname "eth0" ip saddr { 100.64.0.0/24 } counter accept' in fwd
     assert "table ip bng_nat\ndelete table ip bng_nat\n" in text
-    assert ('oifname "eth0" ip saddr { 100.64.0.0/24 } counter snat to 192.0.2.1:1024-65535 persistent '
+    # nft: a port range is only valid after a transport-protocol match
+    assert ('oifname "eth0" ip saddr { 100.64.0.0/24 } meta l4proto { tcp, udp } counter '
+            'snat to 192.0.2.1:1024-65535 persistent comment "nat-pool lab"') in text
+    assert ('oifname "eth0" ip saddr { 100.64.0.0/24 } counter snat to 192.0.2.1 persistent '
             'comment "nat-pool lab"') in text
     assert "masquerade" not in text
 
@@ -34,8 +37,11 @@ def test_parse_nat_counters():
         {"rule": {"family": "ip", "table": "bng_nat", "chain": "postrouting", "handle": 3,
                   "comment": "nat-pool lab",
                   "expr": [{"match": {}}, {"counter": {"packets": 5, "bytes": 420}}, {"snat": {}}]}},
+        {"rule": {"family": "ip", "table": "bng_nat", "chain": "postrouting", "handle": 4,
+                  "comment": "nat-pool lab",
+                  "expr": [{"counter": {"packets": 2, "bytes": 168}}, {"snat": {}}]}},
     ]}
-    assert firewall.parse_nat_counters(json.dumps(doc)) == [{"pool": "lab", "packets": 5, "bytes": 420}]
+    assert firewall.parse_nat_counters(json.dumps(doc)) == [{"pool": "lab", "packets": 7, "bytes": 588}]
 
 
 def test_nat_health_skip_without_nat(base_cfg):
