@@ -21,12 +21,15 @@ separately in its footer. The NAT tile counts only the real uplink's NAT, so it 
 
 ## Presenting
 
-1. Open an SSH tunnel from your laptop and browse to `http://localhost:8080`:
-
-   ```bash
-   ssh -L 8080:127.0.0.1:8080 bng01
-   ```
-
+1. Browse to **https://43.229.72.90**. The certificate is self-signed, so the browser warns once:
+   choose Advanced, then continue. A trusted certificate needs a DNS name for the gateway.
+   - The console is published by `bng-api-remote` on 0.0.0.0:443 (`/etc/bng-platform/api-remote.env`) and
+     opened in the host firewall by `firewall.console_port: 443` in config.yaml.
+   - To allow only certain networks, add `console_sources: [203.0.113.0/24, ...]`, then run
+     `sudo bngctl firewall apply` and confirm.
+   - To take it off the internet again, remove `console_port`, apply the firewall, and set
+     `BNG_API_REMOTE_HOST=127.0.0.1` in `/etc/bng-platform/api-remote.env`.
+   - The SSH tunnel still works: `ssh -L 8080:127.0.0.1:8080 bng01`, then http://localhost:8080.
 2. Sign in with an administrator account. For a customer session, create a read-only demo login:
 
    ```bash

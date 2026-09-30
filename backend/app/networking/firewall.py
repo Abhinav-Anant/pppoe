@@ -31,6 +31,11 @@ def render(cfg: BngConfig) -> str:
     if cfg.aaa == "radius":
         srcs = ", ".join(str(n) for n in cfg.radius.dae_sources())
         dae = f"        udp dport {cfg.radius.coa_port} ip saddr {{ {srcs} }} accept\n"
+    fw = cfg.firewall
+    console = ""
+    if fw.console_port:  # public HTTPS console (bng-api-remote); no sources = anyone
+        src = f"ip saddr {{ {', '.join(map(str, fw.console_sources))} }} " if fw.console_sources else ""
+        console = f"        tcp dport {fw.console_port} {src}accept\n"
     mss = ("        tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu\n"
            if not cfg.nat or cfg.nat.mss_clamp else "")
     # With host_input=easywall, easywall's inet easywall table filters host input;
@@ -43,6 +48,7 @@ def render(cfg: BngConfig) -> str:
         "        ct state invalid drop\n"
         "        meta l4proto { icmp, ipv6-icmp } accept\n"
         "        tcp dport 22 accept\n"
+        f"{console}"
         f"{dae}"
         "    }\n")
     text = (

@@ -79,3 +79,13 @@ def test_shaper_always_resets_vendor(radius_cfg):
     """accel-ppp 1.14.0 keeps a removed vendor= across reloads (shaping silently disabled)."""
     sect = render(BngConfig.model_validate(radius_cfg), SECRET).main.split("[shaper]")[1].split("\n[")[0]
     assert "vendor=0" in sect.splitlines()
+
+
+def test_public_console_port_in_host_firewall(base_cfg):
+    from app.networking import firewall
+    base_cfg["firewall"] = {"console_port": 443}
+    assert "        tcp dport 443 accept\n" in firewall.render(BngConfig.model_validate(base_cfg))
+    base_cfg["firewall"]["console_sources"] = ["198.51.100.0/24"]
+    assert "tcp dport 443 ip saddr { 198.51.100.0/24 } accept" in firewall.render(BngConfig.model_validate(base_cfg))
+    base_cfg["firewall"] = {}
+    assert "dport 443" not in firewall.render(BngConfig.model_validate(base_cfg))

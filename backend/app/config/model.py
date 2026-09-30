@@ -179,6 +179,9 @@ class Firewall(Strict):
     easywall: easywall (github.com/jp1337/easywall) owns host input; bng_filter keeps
     only the subscriber forward chain. easywall must run with routing.mode = "open"."""
     host_input: Literal["bng", "easywall"] = "bng"
+    # public HTTPS console (bng-api-remote listening on this port); sources empty = anyone
+    console_port: int | None = Field(default=None, ge=1, le=65535)
+    console_sources: list[IPv4Network] = []
 
 
 class BngConfig(Strict):
