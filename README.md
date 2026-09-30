@@ -47,6 +47,7 @@ demonstrated**; that needs the BNG on its own hardware with an external traffic 
 - [docs/radius.md](docs/radius.md) — connecting any RADIUS server (plan formats, CoA, secrets)
 - [docs/demo.md](docs/demo.md) — the staged demo on bng01 and how to present it
 - [docs/performance.md](docs/performance.md) — tuning module and benchmark framework; [benchmark-results/](benchmark-results/README.md)
+- [docs/sizing-5000.md](docs/sizing-5000.md) — production config for 5,000 subscribers, from the benchmark results
 - [docs/phase1-results.md](docs/phase1-results.md)
 - [docs/phase5-results.md](docs/phase5-results.md), [phase6](docs/phase6-results.md), [phase7](docs/phase7-results.md), [phase8](docs/phase8-results.md)
 
