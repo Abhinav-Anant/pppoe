@@ -11,6 +11,8 @@ PLUGIN=$(ls /usr/lib/pppd/*/rp-pppoe.so | head -1)
 SECRET=$(cat "$LAB/radius.secret"); PW=$(cat "$LAB/password")
 ACCT=/var/log/freeradius/radacct/$NAS/detail-$(date +%Y%m%d)
 fail=0; T=$(mktemp -d)
+acct() {  # acct STATUS SID: one whole detail record (blank-line separated) holding both, not a grep window
+  awk -v s="Acct-Session-Id = \"$2\"" -v t="Acct-Status-Type = $1" 'BEGIN{RS=""} index($0,s) && index($0,t) {f=1} END{exit !f}' "$ACCT" 2>/dev/null; }
 step() { printf '%-60s %s\n' "$1" "$2"; [ "$2" = PASS ] || fail=1; }
 orig=$(mktemp); cp /etc/bng-platform/config.yaml "$orig"
 cleanup() {
@@ -43,29 +45,26 @@ PY
 }
 
 connect labuser 700 && step "Access-Accept: labuser session up" PASS || step "Access-Accept: labuser session up" FAIL
-r=$(rate labuser); step "Filter-Id 20480/20480 -> shaper ($r)" "$([ "$r" = 20480/20480 ] && echo PASS || echo FAIL)"
+r=$(rate labuser); step "Filter-Id 20000/20000 -> shaper ($r)" "$([ "$r" = 20000/20000 ] && echo PASS || echo FAIL)"
 connect suspended 701; grep -q "account suspended\|authentication failed\|Authentication failed" "$T/pppd-suspended.log" \
   && step "Access-Reject: suspended subscriber refused" PASS || step "Access-Reject: suspended subscriber refused" FAIL
 connect nosuchuser 702; [ -z "$(sid nosuchuser)" ] && step "Access-Reject: unknown subscriber refused" PASS \
   || step "Access-Reject: unknown subscriber refused" FAIL
 
 S=$(sid labuser); sleep 3
-grep -q "Acct-Session-Id = \"$S\"" "$ACCT" 2>/dev/null && grep -B20 "Acct-Session-Id = \"$S\"" "$ACCT" | grep -q "Acct-Status-Type = Start" \
-  && step "Accounting-Start received by RADIUS ($S)" PASS || step "Accounting-Start received by RADIUS ($S)" FAIL
+acct Start "$S" && step "Accounting-Start received by RADIUS ($S)" PASS || step "Accounting-Start received by RADIUS ($S)" FAIL
 
 echo "User-Name=labuser,Acct-Session-Id=$S,Filter-Id=\"10240/5120\"" | ip netns exec "$RNS" radclient -r 2 -t 3 "$NAS:3799" coa "$SECRET" > "$T/coa" 2>&1
 grep -q "CoA-ACK" "$T/coa" && step "CoA-Request answered with CoA-ACK" PASS || step "CoA-Request answered with CoA-ACK ($(tail -1 "$T/coa"))" FAIL
 sleep 1; r=$(rate labuser); step "CoA changed the live shaper to 10240/5120 ($r)" "$([ "$r" = 10240/5120 ] && echo PASS || echo FAIL)"
 
 echo "waiting 70 s for an interim update (Acct-Interim-Interval 60 from RADIUS)"; sleep 70
-grep -A30 "Acct-Session-Id = \"$S\"" "$ACCT" | grep -q "Acct-Status-Type = Interim-Update" \
-  && step "Interim-Update received by RADIUS" PASS || step "Interim-Update received by RADIUS" FAIL
+acct Interim-Update "$S" && step "Interim-Update received by RADIUS" PASS || step "Interim-Update received by RADIUS" FAIL
 
 echo "User-Name=labuser,Acct-Session-Id=$S" | ip netns exec "$RNS" radclient -r 2 -t 3 "$NAS:3799" disconnect "$SECRET" > "$T/dm" 2>&1
 grep -q "Disconnect-ACK" "$T/dm" && step "Disconnect-Request answered with Disconnect-ACK" PASS || step "Disconnect-Request answered with Disconnect-ACK" FAIL
 sleep 3; [ -z "$(sid labuser)" ] && step "session removed by Disconnect-Request" PASS || step "session removed by Disconnect-Request" FAIL
-grep -A30 "Acct-Session-Id = \"$S\"" "$ACCT" | grep -q "Acct-Status-Type = Stop" \
-  && step "Accounting-Stop received by RADIUS" PASS || step "Accounting-Stop received by RADIUS" FAIL
+acct Stop "$S" && step "Accounting-Stop received by RADIUS" PASS || step "Accounting-Stop received by RADIUS" FAIL
 echo "User-Name=labuser" | ip netns exec "$RNS" radclient -r 1 -t 2 "$NAS:3799" disconnect wrong-secret-123 > "$T/dm2" 2>&1
 [ -z "$(grep -E 'Disconnect-(ACK|NAK)' "$T/dm2")" ] && step "DM with a wrong secret is ignored" PASS || step "DM with a wrong secret is ignored" FAIL
 hangup 700

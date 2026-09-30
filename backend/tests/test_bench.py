@@ -171,3 +171,20 @@ def test_bpf_filter_keeps_only_generated_pppoe():
     assert not _bpf_run(lg.BPF, frame(other, lg.SESS))  # pppd traffic sessions
     assert not _bpf_run(lg.BPF, frame(ours, 0x0800))
     assert not _bpf_run(lg.BPF, frame(b"\xff" * 6, lg.DISC))  # our own PADI broadcasts
+
+
+def test_username_template_per_session():
+    g, ac = run(lg.PAP, n=3)
+    names = sorted(g.username(x) for x in g.by_mac.values())
+    assert names == [b"u"] * 3
+    g2 = lg.LoadGen(lambda f: None, 2, "sub-{i}", "pw", offset=100)
+    g2.tick(0.0)
+    assert [g2.username(x) for x in g2.by_mac.values()] == [b"sub-100"]
+
+
+def test_interfaces_skip_subscriber_ppp(tmp_path):
+    from app.networking.interfaces import list_interfaces
+    for n in ("ens18", "ppp0", "ppp1234", "pppoe-x"):
+        (tmp_path / n / "statistics").mkdir(parents=True)
+    assert [n["name"] for n in list_interfaces(tmp_path)] == ["ens18", "pppoe-x"]
+    assert len(list_interfaces(tmp_path, subscribers=True)) == 4

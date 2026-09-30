@@ -287,3 +287,9 @@ def test_spa_fallback(api, tmp_path, monkeypatch):
     assert api.get("/assets/x.js").text == "js"
     assert api.get("/api/nope").status_code == 404
     assert "app" in api.get("/..%2F..%2Fetc%2Fpasswd").text
+
+
+def test_branding_public_and_bounded(api):
+    assert api.get("/api/branding").json() == {"name": "BNG Console", "tagline": "Broadband network gateway"}
+    (api.node.paths.etc / "branding.json").write_text('{"name": "Acme Fibre", "tagline": 5, "x": "y"}')
+    assert api.get("/api/branding").json() == {"name": "Acme Fibre", "tagline": "Broadband network gateway"}

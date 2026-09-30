@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { post } from "../api/client";
 import type { Session } from "../api/types";
+import { token } from "../components/brand";
 import { useCan, useLive } from "../components/context";
 import { Badge, Button, Card, Empty, ErrorNote, fmtBytes, fmtDur, fmtKbit, fmtMbps, fmtNum, KV, PageHeader } from "../components/ui";
 import { useApi } from "../hooks/useApi";
@@ -94,12 +95,12 @@ export default function SessionDetail() {
             <div className="h-56">
               <ResponsiveContainer>
                 <LineChart data={trail.current}>
-                  <CartesianGrid stroke="#27272a" />
-                  <XAxis dataKey="t" tickFormatter={time} stroke="#52525b" fontSize={10} minTickGap={40} />
-                  <YAxis stroke="#52525b" fontSize={10} width={56} tickFormatter={(v) => fmtMbps(v)} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", fontSize: 11 }} labelFormatter={(t) => time(Number(t))} formatter={(v) => fmtMbps(Number(v))} />
-                  <Line dataKey="down" name="download" stroke="#38bdf8" dot={false} isAnimationActive={false} />
-                  <Line dataKey="up" name="upload" stroke="#a78bfa" dot={false} isAnimationActive={false} />
+                  <CartesianGrid stroke={token("--z800")} />
+                  <XAxis dataKey="t" tickFormatter={time} stroke={token("--z600")} fontSize={10} minTickGap={40} />
+                  <YAxis stroke={token("--z600")} fontSize={10} width={56} tickFormatter={(v) => fmtMbps(v)} />
+                  <Tooltip contentStyle={{ background: token("--z900"), border: `1px solid ${token("--z700")}`, borderRadius: 8, fontSize: 11 }} labelFormatter={(t) => time(Number(t))} formatter={(v) => fmtMbps(Number(v))} />
+                  <Line dataKey="down" name="download" stroke="var(--optic)" dot={false} isAnimationActive={false} />
+                  <Line dataKey="up" name="upload" stroke="var(--amber)" dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

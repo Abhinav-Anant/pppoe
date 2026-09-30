@@ -1,6 +1,7 @@
 """NIC inventory from sysfs; no interface names are hard-coded."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 COUNTERS = ("rx_bytes", "tx_bytes", "rx_packets", "tx_packets", "rx_errors", "tx_errors", "rx_dropped", "tx_dropped")
@@ -17,9 +18,16 @@ def _int(s: str) -> int:
     return int(s) if s.lstrip("-").isdigit() else 0
 
 
-def list_interfaces(root: Path = Path("/sys/class/net")) -> list[dict]:
+SUBSCRIBER_IF = re.compile(r"^ppp\d+$")
+
+
+def list_interfaces(root: Path = Path("/sys/class/net"), subscribers: bool = False) -> list[dict]:
+    """Host NICs with counters. Per-subscriber pppN interfaces are skipped unless asked for: at 30k
+    sessions they would be ~400k sysfs reads per live tick, and their rates come from accel-ppp."""
     nics = []
     for d in sorted(root.iterdir()):
+        if not subscribers and SUBSCRIBER_IF.match(d.name):
+            continue
         speed = _int(_read(d / "speed"))
         nics.append({
             "name": d.name,

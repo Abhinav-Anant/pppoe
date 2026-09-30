@@ -113,9 +113,10 @@ class Session:
 class LoadGen:
     """State machine for many sessions; `send(frame)` is injected so tests can drive it."""
 
-    def __init__(self, send, n: int, user: str, password: str, rate: float = 200.0, window: int = 500, mru: int = 1492):
-        self.send, self.n, self.user, self.pw = send, n, user.encode(), password.encode()
-        self.rate, self.window, self.mru = rate, window, mru
+    def __init__(self, send, n: int, user: str, password: str, rate: float = 200.0, window: int = 500, mru: int = 1492,
+                 offset: int = 0):
+        self.send, self.n, self.user, self.pw = send, n, user, password.encode()  # user may contain {i}
+        self.rate, self.window, self.mru, self.offset = rate, window, mru, offset  # offset: MAC range per instance
         self.by_mac: dict[bytes, Session] = {}
         self.by_sid: dict[int, Session] = {}
         self.pending: set[Session] = set()  # in setup; only these need timers
@@ -124,6 +125,9 @@ class LoadGen:
         self.up = self.failed = self.dropped = 0
         self.reasons: dict[str, int] = {}
         self.retx: dict[str, int] = {}  # retransmissions by state: where the BNG (or the wire) lost packets
+
+    def username(self, s: Session) -> bytes:
+        return self.user.replace("{i}", str(s.i)).encode()
 
     # --- frames -----------------------------------------------------------
     def disc(self, s: Session, dst: bytes, code: int, payload: bytes, sid: int = 0) -> None:
@@ -150,7 +154,8 @@ class LoadGen:
             if not s.lcp_ours:
                 self.ppp(s, LCP, cp(CONF_REQ, s.ident, opt(1, struct.pack("!H", self.mru)) + opt(5, s.magic)))
         elif s.state == "auth" and s.auth == PAP:
-            self.ppp(s, PAP, cp(1, s.ident, bytes([len(self.user)]) + self.user + bytes([len(self.pw)]) + self.pw))
+            u = self.username(s)
+            self.ppp(s, PAP, cp(1, s.ident, bytes([len(u)]) + u + bytes([len(self.pw)]) + self.pw))
         elif s.state == "ipcp" and not s.ipcp_ours:
             self.ppp(s, IPCP, cp(CONF_REQ, s.ident, opt(3, s.ip)))
 
@@ -245,7 +250,7 @@ class LoadGen:
             if code == 1 and body:
                 n = body[0]
                 h = hashlib.md5(bytes([ident]) + self.pw + body[1:1 + n]).digest()
-                self.ppp(s, CHAP, cp(2, ident, bytes([len(h)]) + h + self.user))
+                self.ppp(s, CHAP, cp(2, ident, bytes([len(h)]) + h + self.username(s)))
             elif code == 3:
                 self.advance(s, "ipcp", now)
             elif code == 4:
@@ -276,7 +281,7 @@ class LoadGen:
             self.t_start = now
         due = min(self.n, int((now - self.t_start) * self.rate) + 1)
         while self.started < due and len(self.pending) < self.window:
-            s = Session(self.started, now)
+            s = Session(self.offset + self.started, now)
             self.by_mac[s.mac] = s
             self.pending.add(s)
             self.started += 1
@@ -315,6 +320,7 @@ def main() -> int:
     ap.add_argument("--password-file", required=True)
     ap.add_argument("--rate", type=float, default=200.0, help="new sessions per second")
     ap.add_argument("--window", type=int, default=500, help="max sessions in setup at once")
+    ap.add_argument("--offset", type=int, default=0, help="first MAC index (several instances side by side)")
     a = ap.parse_args()
 
     # One socket for discovery and session frames: two sockets would let an LCP frame be read
@@ -330,13 +336,14 @@ def main() -> int:
     out, socks = so, [so]
 
     def send(frame: bytes) -> None:
-        try:
-            out.send(frame)
-        except BlockingIOError:
-            select.select([], [out], [], 0.05)
-            out.send(frame)
+        for _ in range(100):  # a PADT burst for 1,000+ sessions fills the socket buffer: wait, don't drop
+            try:
+                out.send(frame)
+                return
+            except BlockingIOError:
+                select.select([], [out], [], 0.05)
 
-    g = LoadGen(send, a.sessions, a.user, open(a.password_file).read().strip(), a.rate, a.window)
+    g = LoadGen(send, a.sessions, a.user, open(a.password_file).read().strip(), a.rate, a.window, offset=a.offset)
     stop = []
     signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
     signal.signal(signal.SIGINT, lambda *_: stop.append(1))

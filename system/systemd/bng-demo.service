@@ -1,0 +1,18 @@
+[Unit]
+Description=bng-platform demo stage: simulated subscribers and traffic on the lab (not for production)
+After=accel-ppp.service bng-radius-lab.service
+Wants=bng-radius-lab.service
+
+[Service]
+WorkingDirectory=/opt/bng-platform
+ExecStartPre=/opt/bng-platform/src/scripts/lab/lab-up.sh
+# the lab veth may have appeared after accel-ppp started (e.g. at boot): attach it, ignore "exists"
+ExecStartPre=-/usr/local/bin/accel-cmd -H 127.0.0.1 -p 2001 pppoe interface add bnglab0
+ExecStart=/opt/bng-platform/venv/bin/python -m app.bench.demo
+KillSignal=SIGTERM
+TimeoutStopSec=180
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "./index.css";
 import { get, post, setCsrf, setRemoteNode, setUnauthorizedHandler } from "./api/client";
 import type { Me } from "./api/types";
+import { applyTheme, initialTheme } from "./components/brand";
 import Layout from "./components/Layout";
 import { AuthContext, LiveProvider, NodeContext, type NodeInfo } from "./components/context";
 import Audit from "./pages/Audit";
@@ -23,6 +24,8 @@ import Sessions from "./pages/Sessions";
 import System from "./pages/System";
 import Benchmark from "./pages/Benchmark";
 import Users from "./pages/Users";
+
+applyTheme(initialTheme()); // before the first render: no flash of the wrong theme
 
 const NODE_KEY = "bng.node";
 const saved = () => { try { return localStorage.getItem(NODE_KEY); } catch { return null; } };

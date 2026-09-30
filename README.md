@@ -2,7 +2,8 @@
 
 Linux BNG / PPPoE concentrator built on upstream **ACCEL-PPP 1.14.0**, nftables and tc,
 with a management plane (`bngctl`, `bng-api`, web GUI) that is never in the
-packet path. External AAA is Jaze RADIUS; no RADIUS server is deployed here.
+packet path. AAA is any external RADIUS server (Jaze in production; verified with FreeRADIUS); the lab
+and demo ship a FreeRADIUS instance in its own namespace.
 
 ```text
              CONTROL PLANE            bngctl, bng-api (FastAPI + PostgreSQL), React GUI
@@ -43,6 +44,8 @@ demonstrated**; that needs the BNG on its own hardware with an external traffic 
 - [docs/api.md](docs/api.md) — management API, roles, endpoints
 - [docs/gui.md](docs/gui.md) — web GUI: access, build, pages, live data
 - [docs/multi-bng.md](docs/multi-bng.md) — managing several BNGs from one console
+- [docs/radius.md](docs/radius.md) — connecting any RADIUS server (plan formats, CoA, secrets)
+- [docs/demo.md](docs/demo.md) — the staged demo on bng01 and how to present it
 - [docs/performance.md](docs/performance.md) — tuning module and benchmark framework; [benchmark-results/](benchmark-results/README.md)
 - [docs/phase1-results.md](docs/phase1-results.md)
 - [docs/phase5-results.md](docs/phase5-results.md), [phase6](docs/phase6-results.md), [phase7](docs/phase7-results.md), [phase8](docs/phase8-results.md)

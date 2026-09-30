@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Page, Session } from "../api/types";
 import { useCan, useLive } from "../components/context";
+import LivePath from "../components/LivePath";
 import { Card, CheckList, Empty, fmtBytes, fmtKbit, fmtMbps, fmtNum, PageHeader, Stat, T } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 
@@ -23,32 +24,25 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader title={`Dashboard — ${live.node}`}>
-        <span className="text-[11px] text-zinc-500">accel-ppp up {live.accel.uptime ?? "—"}</span>
+      <PageHeader title="Network overview">
+        <span className="text-xs text-zinc-500">Gateway daemon up {live.accel.uptime ?? "—"}</span>
       </PageHeader>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
-        <Stat label="ACCEL-PPP" value={live.accel_active ? "running" : "STOPPED"} tone={live.accel_active ? "ok" : "bad"} sub={live.accel_error ?? `cpu ${live.accel.cpu ?? "—"}`} />
-        <Stat label="Active sessions" value={fmtNum(s.active)} sub={`${s.total - s.active} starting/finishing`} />
-        <Stat label="Logins / min" value={fmtNum(s.logins_per_min)} sub={`logouts ${fmtNum(s.logouts_per_min)}`} tone={s.logouts_per_min > 50 ? "warn" : undefined} />
-        <Stat label="Subscriber down" value={fmtMbps(s.download_mbps)} sub={`up ${fmtMbps(s.upload_mbps)}`} />
-        <Stat label={`Uplink ${live.uplink}`} value={fmtMbps(up?.rx_mbps)} sub={`rx · tx ${fmtMbps(up?.tx_mbps)}`} />
-        <Stat label="Uplink pps" value={fmtNum(up?.rx_pps)} sub={`rx · tx ${fmtNum(up?.tx_pps)}`} />
+      <LivePath live={live} />
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <Stat label="CPU" value={live.host.cpu_percent == null ? "—" : `${live.host.cpu_percent}%`} tone={pct(live.host.cpu_percent, 70, 90)}
-          sub={`softirq ${live.host.softirq_percent ?? "—"}% · load ${live.host.load?.[0] ?? "—"}`} />
-        <Stat label="RAM" value={mem == null ? "—" : `${mem.toFixed(0)}%`} tone={pct(mem, 80, 92)} sub={fmtBytes(live.host.mem_total_bytes)} />
-        <Stat label="Conntrack" value={ct == null ? "—" : `${ct.toFixed(1)}%`} tone={pct(ct, 70, 90)} sub={`${fmtNum(live.conntrack.count)} / ${fmtNum(live.conntrack.max)}`} />
-        <Stat label="NIC errors / drops" value={`${fmtNum(up?.errors)} / ${fmtNum(up?.drops)}`} tone={up && (up.errors || up.drops) ? "warn" : "ok"} sub={live.uplink} />
-        <Stat label="Duplicates" value={fmtNum(s.duplicates)} tone={s.duplicates ? "warn" : "ok"} sub="same user or MAC twice" />
-        <Stat label="Unshaped" value={fmtNum(s.unshaped)} tone={s.unshaped ? "warn" : "ok"} sub="active, no RADIUS rate" />
-        <Stat label="PPPoE PADI" value={fmtNum(Number(live.accel.pppoe?.["recv PADI"] ?? NaN))} sub={`dropped ${live.accel.pppoe?.["drop PADI"] ?? "—"}`} />
+          sub={`softirq ${live.host.softirq_percent ?? "—"}%, load ${live.host.load?.[0] ?? "—"}`} />
+        <Stat label="Memory" value={mem == null ? "—" : `${mem.toFixed(0)}%`} tone={pct(mem, 80, 92)} sub={`of ${fmtBytes(live.host.mem_total_bytes)}`} />
+        <Stat label="Connection tracking" value={ct == null ? "—" : `${ct.toFixed(1)}%`} tone={pct(ct, 70, 90)} sub={`${fmtNum(live.conntrack.count)} of ${fmtNum(live.conntrack.max)}`} />
+        <Stat label="Uplink packets/s" value={fmtNum(up?.rx_pps)} sub={`in, ${fmtNum(up?.tx_pps)} out`} />
+        <Stat label="Uplink errors and drops" value={`${fmtNum(up?.errors)} / ${fmtNum(up?.drops)}`} tone={up && (up.errors || up.drops) ? "warn" : "ok"} sub={live.uplink} />
+        <Stat label="Logins and logouts" value={`${fmtNum(s.logins_per_min)} / ${fmtNum(s.logouts_per_min)}`} tone={s.logouts_per_min > 50 ? "warn" : undefined} sub="per minute" />
+        <Stat label="Without a plan rate" value={fmtNum(s.unshaped)} tone={s.unshaped ? "warn" : "ok"} sub="active sessions RADIUS did not shape" />
+        <Stat label="Duplicate logins" value={fmtNum(s.duplicates)} tone={s.duplicates ? "warn" : "ok"} sub="same user or MAC twice" />
+        <Stat label="Discovery requests" value={fmtNum(Number(live.accel.pppoe?.["recv PADI"] ?? NaN))} sub={`${live.accel.pppoe?.["drop PADI"] ?? "—"} dropped`} />
         <Stat label="NAT pools" value={fmtNum(live.nat.length)} sub={`${fmtNum(live.nat.reduce((a, n) => a + n.packets, 0))} flows translated`} />
       </div>
 
-      <div className="mt-3 grid gap-3 xl:grid-cols-3">
-        <Card title="Health" className="xl:col-span-1">
-          {checks ? <CheckList checks={checks} /> : <Empty>Running checks…</Empty>}
-        </Card>
-
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
         {can("view_sessions") && (
           <Card
             title="Top subscribers"
@@ -90,20 +84,33 @@ export default function Dashboard() {
           </Card>
         )}
 
-        <Card title="Active sessions by plan (RADIUS rate)">
-          {plans.data && Object.keys(plans.data.plans).length ? (
-            <table className={T.table}>
-              <tbody>
-                {Object.entries(plans.data.plans).sort((a, b) => b[1] - a[1]).map(([rate, n]) => (
-                  <tr key={rate} className={T.tr}>
-                    <td className={T.td}>{rate === "unshaped" ? <span className="text-amber-400">unshaped</span> : rate.split("/").map((k) => fmtKbit(Number(k))).join(" / ")}</td>
-                    <td className={`${T.td} num text-right`}>{fmtNum(n)}</td>
-                  </tr>
+        <Card title="Subscribers by plan">
+          {plans.data && Object.keys(plans.data.plans).length ? (() => {
+            const rows = Object.entries(plans.data.plans).sort((a, b) => b[1] - a[1]);
+            const max = Math.max(...rows.map(([, n]) => n));
+            return (
+              <ul className="space-y-2.5">
+                {rows.map(([rate, n]) => (
+                  <li key={rate}>
+                    <div className="flex justify-between text-xs">
+                      <span className={rate === "unshaped" ? "text-amber-400" : "text-zinc-200"}>
+                        {rate === "unshaped" ? "No plan rate" : rate.split("/").map((k) => fmtKbit(Number(k))).join(" down, ") + " up"}
+                      </span>
+                      <span className="num text-zinc-500">{fmtNum(n)}</span>
+                    </div>
+                    <div className="mt-1 h-1.5 rounded-full bg-zinc-800">
+                      <div className={`h-1.5 rounded-full ${rate === "unshaped" ? "bg-amber-400" : "bg-sky-500"}`} style={{ width: `${(100 * n) / max}%` }} />
+                    </div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          ) : <Empty>No active sessions</Empty>}
+              </ul>
+            );
+          })() : <Empty>No active sessions</Empty>}
         </Card>
+        <Card title="Health checks" className="xl:col-span-3">
+          {checks ? <CheckList checks={checks} /> : <Empty>Running checks…</Empty>}
+        </Card>
+
       </div>
     </>
   );

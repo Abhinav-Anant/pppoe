@@ -11,17 +11,18 @@ set -euo pipefail
 NS=bngradius; HOST_IF=bngrad0; PEER_IF=bngrad1; NAS=10.255.0.1; SRV=10.255.0.2
 LAB=/etc/bng-platform/lab; RADDB=/etc/freeradius/bng-lab   # freerad must read it; secrets stay in $LAB
 
-case "${1:-up}" in
+MODE=${1:-up}
+case "$MODE" in
 down)
   systemctl disable --now bng-radius-lab.service 2>/dev/null || true
   ip link del "$HOST_IF" 2>/dev/null || true
   ip netns del "$NS" 2>/dev/null || true
   echo "radius lab down"; exit 0 ;;
-up) ;;
-*) echo "usage: $0 up|down" >&2; exit 2 ;;
+up|net) ;;
+*) echo "usage: $0 up|down|net" >&2; exit 2 ;;
 esac
 
-if ! command -v freeradius >/dev/null; then
+if [ "$MODE" = up ] && ! command -v freeradius >/dev/null; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -q freeradius freeradius-utils >/dev/null
 fi
 # the packaged instance would listen on every host address; the lab one lives in the namespace
@@ -32,6 +33,7 @@ ip netns list | grep -qw "$NS" || ip netns add "$NS"
 ip link show "$HOST_IF" >/dev/null 2>&1 || ip link add "$HOST_IF" type veth peer name "$PEER_IF" netns "$NS"
 ip addr replace "$NAS/30" dev "$HOST_IF"; ip link set "$HOST_IF" up
 ip -n "$NS" addr replace "$SRV/30" dev "$PEER_IF"; ip -n "$NS" link set "$PEER_IF" up; ip -n "$NS" link set lo up
+[ "$MODE" = net ] && exit 0   # boot path (bng-radius-lab.service): namespace + veth only
 
 umask 077
 install -d -m 0700 "$LAB"
@@ -59,7 +61,7 @@ EOF
 # plans: Filter-Id "down/up" kbit, Mikrotik-Rate-Limit "rx/tx" (= up/down), WISPr bit/s
 plan() {  # name down_mbit up_mbit
   printf '%s Cleartext-Password := "%s"\n\tFilter-Id := "%s/%s",\n\tMikrotik-Rate-Limit := "%sM/%sM",\n\tWISPr-Bandwidth-Max-Down := %s,\n\tWISPr-Bandwidth-Max-Up := %s,\n\tAcct-Interim-Interval := 60\n\n' \
-    "$1" "$PW" "$(( $2 * 1024 ))" "$(( $3 * 1024 ))" "$3" "$2" "$(( $2 * 1000000 ))" "$(( $3 * 1000000 ))"
+    "$1" "$PW" "$(( $2 * 1000 ))" "$(( $3 * 1000 ))" "$3" "$2" "$(( $2 * 1000000 ))" "$(( $3 * 1000000 ))"
 }
 {
   echo "# bng-platform lab subscribers (radius-lab.sh); all share the lab password"
@@ -68,6 +70,11 @@ plan() {  # name down_mbit up_mbit
   for i in $(seq 1 6); do plan "home100-$i" 100 50; done
   for i in $(seq 1 4); do plan "biz200-$i" 200 200; done
   for i in $(seq 1 2); do plan "biz500-$i" 500 500; done
+  # simulated subscribers for demos (bng-demo.service): one username per session, e.g. sub100-42
+  for spec in "sub50 50 25" "sub100 100 50" "sub200 200 100" "sub500 500 500"; do
+    set -- $spec
+    plan "DEFAULT User-Name =~ \"^$1-[0-9]+$\"," "$2" "$3"
+  done
   printf 'suspended Cleartext-Password := "%s", Auth-Type := Reject\n\tReply-Message := "account suspended"\n\n' "$PW"
   echo "DEFAULT Auth-Type := Reject"
   printf '\tReply-Message := "unknown subscriber"\n'
@@ -79,15 +86,18 @@ cat > /etc/systemd/system/bng-radius-lab.service <<EOF
 [Unit]
 Description=bng-platform lab RADIUS server (FreeRADIUS in netns $NS)
 After=network-online.target
+# the veth (NAS address, CoA listener) must exist before accel-ppp binds dae-server to it
+Before=accel-ppp.service
 
 [Service]
-ExecStartPre=/bin/sh -c 'ip netns list | grep -qw $NS'
+ExecStartPre=/opt/bng-platform/src/scripts/lab/radius-lab.sh net
 ExecStart=/usr/sbin/ip netns exec $NS /usr/sbin/freeradius -f -d $RADDB
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 EOF
+chmod 0644 /etc/systemd/system/bng-radius-lab.service   # written under umask 077
 systemctl daemon-reload
 systemctl enable bng-radius-lab.service >/dev/null
 systemctl restart bng-radius-lab.service

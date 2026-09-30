@@ -60,6 +60,8 @@ systemctl enable accel-ppp.service   # started by the first 'bngctl config apply
 install -m 0644 "$SRC/system/systemd/bng-tuning.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable bng-tuning.service  # no-op until 'bngctl tuning apply' has been run
+install -m 0644 "$SRC/system/systemd/bng-demo.service" /etc/systemd/system/   # lab demo; enabled only by hand
+systemctl daemon-reload
 
 log "bngctl"
 python3 -m venv "$PREFIX/venv"

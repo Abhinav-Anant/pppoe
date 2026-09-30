@@ -337,6 +337,18 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
     def livez():
         return {"ok": True}
 
+    @app.get("/api/branding", tags=["system"])
+    def branding(node: Node = Depends(the_node)):
+        """Public (the sign-in page shows it): operator-set name and tagline from
+        /etc/bng-platform/branding.json, e.g. {"name": "Acme Fibre", "tagline": "Broadband gateway"}."""
+        out = {"name": "BNG Console", "tagline": "Broadband network gateway"}
+        try:
+            data = json.loads((node.paths.etc / "branding.json").read_text(encoding="utf-8"))
+            out.update({k: str(data[k])[:80] for k in out if isinstance(data.get(k), str) and data[k].strip()})
+        except (OSError, ValueError):
+            pass
+        return out
+
     @app.post("/api/auth/login", tags=["auth"])
     def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
         if request.headers.get("x-requested-with") != "bng":

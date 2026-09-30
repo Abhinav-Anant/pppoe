@@ -1,10 +1,65 @@
+@import "@fontsource-variable/onest";
 @import "tailwindcss";
 
+/* Every page is written against Tailwind's zinc scale and four status hues. They are remapped to
+   theme tokens here, so "daylight" (default, for presenting) and "night" (NOC) restyle the whole
+   console without touching the pages. The scale inverts in daylight: zinc-950 is always the canvas,
+   zinc-100 always the strongest text. */
 @theme {
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  --font-sans: "Onest Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --color-zinc-50: var(--z50);   --color-zinc-100: var(--z100); --color-zinc-200: var(--z200);
+  --color-zinc-300: var(--z300); --color-zinc-400: var(--z400); --color-zinc-500: var(--z500);
+  --color-zinc-600: var(--z600); --color-zinc-700: var(--z700); --color-zinc-800: var(--z800);
+  --color-zinc-900: var(--z900); --color-zinc-950: var(--z950);
+  --color-emerald-300: var(--ok-strong); --color-emerald-400: var(--ok); --color-emerald-500: var(--ok);
+  --color-emerald-700: var(--ok-line); --color-emerald-950: var(--ok-wash);
+  --color-red-100: var(--on-bad); --color-red-300: var(--bad-strong); --color-red-400: var(--bad);
+  --color-red-500: var(--bad); --color-red-600: var(--bad); --color-red-700: var(--bad-line);
+  --color-red-800: var(--bad-line); --color-red-900: var(--bad-fill); --color-red-950: var(--bad-wash);
+  --color-amber-300: var(--warn-strong); --color-amber-400: var(--warn); --color-amber-700: var(--warn-line);
+  --color-amber-800: var(--warn-line); --color-amber-950: var(--warn-wash);
+  --color-sky-300: var(--info-strong); --color-sky-400: var(--optic); --color-sky-500: var(--optic);
+  --color-sky-600: var(--optic); --color-sky-700: var(--primary-hover); --color-sky-800: var(--primary);
+  --color-sky-950: var(--info-wash);
 }
 
-html { color-scheme: dark; font-size: 13px; }
-body { margin: 0; }
+:root, :root[data-theme="day"] {
+  color-scheme: light;
+  --z950: #edf1f5; --z900: #ffffff; --z800: #dfe6ee; --z700: #c9d3de; --z600: #9aa9ba; --z500: #66778c;
+  --z400: #4e5f74; --z300: #3a4b5f; --z200: #26374b; --z100: #13263b; --z50: #0b1a2a;
+  --optic: #0b7f9e; --amber: #c9820a; --primary: #0b7f9e; --primary-hover: #096a84; --info-strong: #075e75;
+  --info-wash: #e1f2f7;
+  --ok: #0e8a5f; --ok-strong: #0a6b49; --ok-line: #9fd8c2; --ok-wash: #e3f5ee;
+  --bad: #c23b3b; --bad-strong: #9c2626; --bad-line: #eab3b3; --bad-fill: #c23b3b; --bad-wash: #fbe9e9; --on-bad: #ffffff;
+  --warn: #b7791f; --warn-strong: #8a5a12; --warn-line: #efd29a; --warn-wash: #fcf2dd;
+  --shadow: 0 1px 2px rgb(19 38 59 / 6%), 0 4px 16px rgb(19 38 59 / 5%);
+}
+
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --z950: #0b1420; --z900: #111e2e; --z800: #1c2c41; --z700: #2a3d55; --z600: #3e5470; --z500: #6b7f98;
+  --z400: #8fa2b8; --z300: #b6c4d3; --z200: #d5dfe9; --z100: #e9eff5; --z50: #f5f8fb;
+  --optic: #3db7d9; --amber: #f0b43c; --primary: #11708c; --primary-hover: #168aab; --info-strong: #9bdcee;
+  --info-wash: #0f2a38;
+  --ok: #3cc99b; --ok-strong: #8de3c4; --ok-line: #1f5c48; --ok-wash: #0f2a24;
+  --bad: #f07373; --bad-strong: #f8b0b0; --bad-line: #6b2b2b; --bad-fill: #7a2626; --bad-wash: #2e1519; --on-bad: #fde8e8;
+  --warn: #f0b43c; --warn-strong: #f7d58f; --warn-line: #6b5220; --warn-wash: #2b2412;
+  --shadow: none;
+}
+
+html { font-size: 13.5px; }
+body {
+  margin: 0; background: var(--z950); color: var(--z200);
+  font-feature-settings: "tnum" 1, "cv11" 1; -webkit-font-smoothing: antialiased;
+}
 .num { font-variant-numeric: tabular-nums; }
+.surface { background: var(--z900); box-shadow: var(--shadow); }
+:focus-visible { outline: 2px solid var(--optic); outline-offset: 2px; }
+
+/* the live path: dash offset animates at a speed set per flow (--dur); off for reduced motion */
+.flow { stroke-dasharray: 2 10; stroke-linecap: round; animation: flow var(--dur, 2s) linear infinite; }
+.flow.rev { animation-direction: reverse; }
+.flow.idle { animation: none; opacity: .35; }
+@keyframes flow { to { stroke-dashoffset: -48; } }
+@media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
