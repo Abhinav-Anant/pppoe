@@ -77,10 +77,16 @@ class IpPools(Strict):
 
 
 class RadiusServer(Strict):
+    """One RADIUS server (any vendor: Jaze, FreeRADIUS, radiusdesk, NPS...). Its shared secret lives
+    in /etc/bng-platform/secrets/radius/<address>.secret, else the default radius.secret; never here."""
     address: IPv4Address
     auth_port: int = Field(default=1812, ge=1, le=65535)
     acct_port: int = Field(default=1813, ge=1, le=65535)
     backup: bool = False
+    weight: int = Field(default=1, ge=1, le=100)            # share of requests among non-backup servers
+    req_limit: int = Field(default=0, ge=0, le=100_000)      # max in-flight requests, 0 = unlimited
+    fail_timeout: int = Field(default=0, ge=0, le=3600)      # s to skip a server after max_fail, 0 = accel default
+    max_fail: int = Field(default=0, ge=0, le=1000)          # consecutive timeouts before failover, 0 = accel default
 
 
 class Radius(Strict):
@@ -96,6 +102,10 @@ class Radius(Strict):
     coa_port: int = Field(default=3799, ge=1, le=65535)
     dae_allowed: list[IPv4Network] = []
     blast_protection: bool = True
+    bind: IPv4Address | None = None                          # source address for requests (multi-homed NAS)
+    strip_realm: bool = False                                # user@realm -> user before Access-Request
+    default_realm: str | None = Field(default=None, pattern=TOKEN)
+    status_server: bool = True                               # server answers RFC 5997 Status-Server (health check)
 
     def dae_sources(self) -> list[IPv4Network]:
         """Who may send CoA/Disconnect: explicit list, else the RADIUS servers."""
@@ -108,10 +118,20 @@ class Shaper(Strict):
     1.14.0 reads a 'G' suffix as x10^7 kbit (1G -> 10 Gbit, measured on bng01)."""
     attr: str = Field(default="Filter-Id", pattern=TOKEN)
     vendor: str | None = Field(default=None, pattern=TOKEN)
+    # separate download/upload attributes (e.g. WISPr-Bandwidth-Max-Down/-Up); replace `attr`
+    attr_down: str | None = Field(default=None, pattern=TOKEN)
+    attr_up: str | None = Field(default=None, pattern=TOKEN)
+    rate_multiplier: float | None = Field(default=None, gt=0, le=1000)  # value x this = kbit/s (WISPr bit/s: 0.001)
     down_limiter: Literal["tbf", "htb", "clsact"] = "tbf"
     up_limiter: Literal["police", "htb"] = "police"
     max_rate_mbit: int | None = Field(default=None, ge=1, le=400_000)
     require_rate: bool = False
+
+    @model_validator(mode="after")
+    def _pair(self) -> Shaper:
+        if (self.attr_down is None) != (self.attr_up is None):
+            raise ValueError("shaper: set both attr_down and attr_up, or neither")
+        return self
 
 
 class NatPool(Strict):

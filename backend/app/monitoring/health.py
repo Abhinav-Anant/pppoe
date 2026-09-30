@@ -66,14 +66,24 @@ def check_pppoe(cfg: BngConfig, accel) -> Check:
     return _ok("PPPoE", not bad, f"not serving: {', '.join(bad)}" if bad else ", ".join(names))
 
 
-def check_radius(cfg: BngConfig, secret: str | None) -> Check:
+def check_radius(cfg: BngConfig, secret: str | dict[str, str] | None) -> Check:
+    """Status-Server (RFC 5997) to each server with its own secret. Servers that do not implement
+    Status-Server set radius.status_server: false; they are then not probed (SKIP), not failed."""
     if cfg.aaa != "radius":
         return Check("RADIUS", "SKIP", "aaa=lab (local chap-secrets)")
-    if not secret:
+    keys = secret if isinstance(secret, dict) else ({"": secret} if secret else {})
+    if not keys:
         return Check("RADIUS", "FAIL", "secret unreadable (run as root) or missing")
+    if not cfg.radius.status_server:
+        return Check("RADIUS", "SKIP", "Status-Server probing off (radius.status_server: false); "
+                                       "use bngctl radius test --user to check authentication")
     parts, ok = [], False
     for s in cfg.radius.servers:
-        r = probe.status_server(str(s.address), s.auth_port, secret.encode(), cfg.radius.nas_identifier,
+        key = keys.get(str(s.address)) or keys.get("")
+        if not key:
+            parts.append(f"{s.address} no secret")
+            continue
+        r = probe.status_server(str(s.address), s.auth_port, key.encode(), cfg.radius.nas_identifier,
                                 timeout=2.0, tries=1)
         ok = ok or r is not None
         parts.append(f"{s.address} {r.rtt_ms:.0f} ms" if r else f"{s.address} no Status-Server reply")
@@ -209,7 +219,8 @@ def critical_failures(cfg: BngConfig, accel: AccelCmd) -> list[str]:
     return [f"{c.name}: {c.detail}" for c in checks if c.status == "FAIL"]
 
 
-def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | None, db_url: str | None = None) -> list[Check]:
+def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | dict[str, str] | None,
+            db_url: str | None = None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
         check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),

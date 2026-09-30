@@ -50,6 +50,8 @@ else
   ldconfig
 fi
 /usr/local/sbin/accel-pppd -V
+# extra RADIUS vendors (WISPr) + the root dictionary config.yaml renders (render.DICTIONARY)
+install -m 0644 "$SRC"/system/radius/dictionary.* /usr/local/share/accel-ppp/radius/
 
 log "systemd"
 install -m 0644 "$SRC/system/systemd/accel-ppp.service" /etc/systemd/system/

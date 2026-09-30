@@ -26,7 +26,7 @@ try:
 except ImportError:  # Windows dev box: tests only
     fcntl = None
 
-from app.accel.render import Rendered, render
+from app.accel.render import _SECRET_RE, Rendered, render
 from app.accel.validate import validate_text
 from app.config.model import BngConfig, load
 
@@ -53,6 +53,8 @@ class Paths:
     def secret(self) -> Path: return self.etc / "secrets" / "radius.secret"
     @property
     def secrets_include(self) -> Path: return self.etc / "secrets" / "radius.conf"
+    @property
+    def radius_secrets(self) -> Path: return self.etc / "secrets" / "radius"   # <address>.secret per server
     @property
     def versions(self) -> Path: return self.state / "versions"
     @property
@@ -121,10 +123,43 @@ class ConfigManager:
     def _secret(self) -> str | None:
         return _read(self.paths.secret).strip() if self.paths.secret.exists() else None
 
+    def secrets(self) -> dict[str, str]:
+        """{"": default secret, "<server address>": its own secret, ...} (files that exist)."""
+        out = {"": self._secret()} if self._secret() else {}
+        if self.paths.radius_secrets.is_dir():
+            out.update({f.stem: _read(f).strip() for f in self.paths.radius_secrets.glob("*.secret")})
+        return out
+
+    def secret_status(self) -> dict[str, bool]:
+        """Which secrets are set, never their values (for the API/GUI)."""
+        return {k or "default": bool(v) for k, v in self.secrets().items()}
+
+    def set_secret(self, value: str, server: str | None, admin: str, source: str) -> str:
+        """Store a RADIUS shared secret (default, or for one server) and re-apply the running config so
+        accel-ppp uses it. The value is never logged, audited, versioned or returned."""
+        from ipaddress import IPv4Address
+        if not _SECRET_RE.match(value):
+            raise ApplyError("secret must be 8-128 printable ASCII characters without space or comma")
+        target = self.paths.secret if server is None else self.paths.radius_secrets / f"{IPv4Address(server)}.secret"
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        old = _read(target) if target.exists() else None
+        _write(target, value + "\n", 0o600)
+        self.audit(admin=admin, source=source, action="radius_secret_set", result="ok", server=server or "default")
+        if not self.paths.config.exists() or load(self.paths.config).aaa != "radius":
+            return "secret stored (aaa is not radius: nothing to re-apply)"
+        try:
+            return self.apply(self.paths.config, admin, source)
+        except ApplyError:
+            if old is None:
+                target.unlink()
+            else:
+                _write(target, old, 0o600)
+            raise
+
     def build(self, candidate: Path) -> tuple[BngConfig, Rendered]:
         try:
             cfg = load(candidate)
-            rendered = render(cfg, self._secret() if cfg.aaa == "radius" else None)
+            rendered = render(cfg, self.secrets() if cfg.aaa == "radius" else None)
         except (OSError, ValueError, yaml.YAMLError) as e:
             raise ApplyError(f"invalid config {candidate}: {e}") from e
         errors = validate_text(rendered.main)

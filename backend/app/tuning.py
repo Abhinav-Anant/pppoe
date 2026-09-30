@@ -119,6 +119,7 @@ def diagnostics(root: Path = Path("/")) -> dict:
     return {
         "cpus": cpus, "mem_mb": mem_kb // 1024, "governor": gov, "nics": nics, "sysctl": sysctls,
         "irqbalance": _run("systemctl", "is-active", "irqbalance").strip() or None,
+        "resolved": _run("systemctl", "is-active", "systemd-resolved").strip() or None,
         "softnet": parse_softnet(_read(proc / "net/softnet_stat") or ""),
         "softirqs": parse_softirqs(_read(proc / "softirqs") or ""),
         "irqs": parse_interrupts(_read(proc / "interrupts") or "CPU0\n", [n["name"] for n in nics]),
@@ -177,6 +178,9 @@ def recommend(d: dict) -> list[Rec]:
             if rmax and rcur and rmax.isdigit() and rcur.isdigit() and int(rmax) > int(rcur):
                 recs.append(Rec(f"ring-{k}:{n['name']}", rcur, rmax,
                                 f"ethtool -G {n['name']} {k} {rmax} (resets the link: maintenance window)", False))
+    if d.get("resolved") == "active":
+        recs.append(Rec("systemd-resolved", "active", "static resolv.conf",
+                        "tracks every ppp link: ~1 core at 20k+ sessions; scripts/dns-static.sh apply", False))
     if d["governor"] and d["governor"] != "performance":
         recs.append(Rec("cpu-governor", d["governor"], "performance", "set via cpupower; frequency scaling adds latency", False))
     busiest = {max(range(len(i["per_cpu"])), key=i["per_cpu"].__getitem__) for i in d["irqs"] if i["per_cpu"]}

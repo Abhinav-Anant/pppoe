@@ -23,6 +23,7 @@ from typing import Literal
 import yaml
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as PathParam, Query, Request, Response, WebSocket
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.websockets import WebSocketDisconnect
@@ -222,6 +223,11 @@ class DisconnectIn(BaseModel):
     hard: bool = False
 
 
+class SecretIn(BaseModel):
+    server: IPv4Address | None = None
+    secret: str = Field(min_length=8, max_length=128, pattern=r"^[\x21-\x2b\x2d-\x7e]+$")
+
+
 class ConfigIn(BaseModel):
     """Either `config` (JSON) or `yaml` (text, kept verbatim so comments survive)."""
     config: dict | None = None
@@ -313,6 +319,11 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
             response.headers["Content-Security-Policy"] = CSP
         return response
 
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError):
+        # FastAPI's default echoes the rejected "input": that would be a password or RADIUS secret
+        return JSONResponse({"detail": [{"loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]}, status_code=422)
+
     @app.exception_handler(OperationalError)
     async def db_down(request: Request, exc: OperationalError):
         # PPPoE is unaffected; only management actions that need the DB fail.
@@ -379,7 +390,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     @app.get("/api/health", tags=["system"])
     def health_all(request: Request, node: Node = Depends(the_node), _: Principal = Depends(require())):
-        checks = health.run_all(node.config(), node.accel, node.secret(), request.app.state.db_url)
+        checks = health.run_all(node.config(), node.accel, node.mgr.secrets(), request.app.state.db_url)
         return {"ok": not any(c.status == "FAIL" for c in checks), "checks": [_check(c) for c in checks]}
 
     @app.get("/api/interfaces", tags=["system"])
@@ -499,8 +510,24 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         cfg = node.config()
         stat = _stat(node)
         radius = cfg.radius.model_dump(mode="json") if cfg.radius else None  # never contains the secret
-        return {"aaa": cfg.aaa, "radius": radius, "check": _check(health.check_radius(cfg, node.secret())),
+        return {"aaa": cfg.aaa, "radius": radius, "check": _check(health.check_radius(cfg, node.mgr.secrets())),
+                "secrets": node.mgr.secret_status(),  # which secrets are set; values never leave the node
                 "stats": {k: v for k, v in stat.items() if k.startswith("radius")}}
+
+    @app.put("/api/radius/secret", tags=["radius"])
+    def radius_secret(body: SecretIn, node: Node = Depends(the_node),
+                      p: Principal = Depends(require("change_radius", "apply_config")), db: Session = Depends(get_db)):
+        """Write-only: stores the shared secret (default, or for one server address) as a 0600 file and
+        re-applies the running config so accel-ppp uses it. Never returned, logged or versioned."""
+        try:
+            result = node.mgr.set_secret(body.secret, str(body.server) if body.server else None,
+                                         p.username, f"api:{p.ip}")
+        except ApplyError as e:
+            audit(db, "radius_secret_set", "failed", admin=p.username, ip=p.ip, target=str(body.server or "default"),
+                  error=str(e))
+            raise HTTPException(409, str(e)) from e
+        audit(db, "radius_secret_set", "ok", admin=p.username, ip=p.ip, target=str(body.server or "default"))
+        return {"result": result, "secrets": node.mgr.secret_status()}
 
     @app.get("/api/qos/status", tags=["qos"])
     def qos_status(node: Node = Depends(the_node), _: Principal = Depends(require())):
@@ -736,7 +763,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         node = ws.app.state.node
 
         def produce():
-            checks = health.run_all(node.config(), node.accel, node.secret(), ws.app.state.db_url)
+            checks = health.run_all(node.config(), node.accel, node.mgr.secrets(), ws.app.state.db_url)
             return {"timestamp": time.time(), "checks": [_check(c) for c in checks]}
         await ws_loop(ws, None, 15.0, produce)
 

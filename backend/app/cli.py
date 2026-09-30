@@ -76,6 +76,8 @@ def _parser() -> argparse.ArgumentParser:
     x.add_argument("--hard", action="store_true")
     rad = sub.add_parser("radius").add_subparsers(dest="action", required=True)
     rad.add_parser("test").add_argument("--user")
+    x = rad.add_parser("secret", help="set a RADIUS shared secret (read from stdin, never echoed)")
+    x.add_argument("--server", help="server address; default: the secret shared by all servers")
     cfg = sub.add_parser("config").add_subparsers(dest="action", required=True)
     for name in ("validate", "diff", "apply"):
         x = cfg.add_parser(name)
@@ -186,17 +188,27 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
         print(f"session {a.sid} terminated ({mode})")
         return 0
 
+    if a.cmd == "radius" and a.action == "secret":
+        _require_root()
+        value = getpass.getpass("RADIUS secret: ") if sys.stdin.isatty() else sys.stdin.readline().strip()
+        print(mgr.set_secret(value, a.server, **who))
+        return 0
+
     if a.cmd == "radius":
         cfg = load(paths.config)
         if cfg.aaa != "radius":
             raise ValueError("aaa=lab: no RADIUS servers configured")
-        secret = _secret(paths)
-        if not secret:
+        keys = mgr.secrets()
+        if not keys:
             raise ValueError(f"cannot read {paths.secret} (run with sudo)")
         password = getpass.getpass(f"password for {a.user}: ") if a.user else None
         rc = 1
         for s in cfg.radius.servers:
-            host, key = str(s.address), secret.encode()
+            key = keys.get(str(s.address)) or keys.get("")
+            if not key:
+                print(f"{s.address}: no secret set (bngctl radius secret --server {s.address})")
+                continue
+            host, key = str(s.address), key.encode()
             if a.user:
                 r = probe.access_request(host, s.auth_port, key, a.user, password,
                                          str(cfg.radius.nas_ip_address), cfg.radius.nas_identifier)
@@ -234,7 +246,7 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
         return 0
 
     if a.cmd == "health":
-        checks = health.run_all(load(paths.config), accel, _secret(paths), _db_url())
+        checks = health.run_all(load(paths.config), accel, mgr.secrets(), _db_url())
         print(health.format_report(checks))
         return 1 if any(c.status == "FAIL" for c in checks) else 0
 

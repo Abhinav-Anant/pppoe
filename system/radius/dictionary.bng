@@ -1,0 +1,4 @@
+# bng-platform root dictionary: accel-ppp's own set plus vendors it does not ship.
+# Installed next to accel-ppp's dictionary ($INCLUDE is relative to this file).
+$INCLUDE dictionary
+$INCLUDE dictionary.wispr
