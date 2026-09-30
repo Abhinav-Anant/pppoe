@@ -11,6 +11,9 @@ ExecReload=/bin/kill -USR1 $MAINPID
 PIDFile=/run/accel-pppd.pid
 Restart=on-failure
 RestartSec=2
+# graceful stop sends LCP terminate/PADT to every subscriber: ~117 s for 10k sessions measured on a
+# 12-vCPU VM (Phase 8). The 90 s default SIGKILLed it; CPEs then only notice via LCP echo timeout.
+TimeoutStopSec=600
 LimitNOFILE=1048576
 
 [Install]

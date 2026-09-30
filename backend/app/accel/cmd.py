@@ -119,7 +119,9 @@ class AccelService:
         self.accel, self.unit = accel, unit
 
     def _systemctl(self, verb: str) -> None:
-        p = subprocess.run(["systemctl", verb, self.unit], capture_output=True, text=True, timeout=60)
+        # a graceful stop terminates every session: 117 s for 10k on bng01 (Phase 8), so this must
+        # outlast the unit's TimeoutStopSec=600 or a slow restart is mistaken for a failed one
+        p = subprocess.run(["systemctl", verb, self.unit], capture_output=True, text=True, timeout=660)
         if p.returncode != 0:
             raise AccelError(f"systemctl {verb} {self.unit}: {p.stderr.strip()}")
 
