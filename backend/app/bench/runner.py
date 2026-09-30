@@ -290,7 +290,10 @@ class Bench:
     def sessions(self, n: int, sampler: Sampler) -> tuple["Loadgen", dict]:
         base_active, mem0 = self.active(), _meminfo("MemAvailable")
         cmd = ["ip", "netns", "exec", NS, sys.executable, "-m", "app.bench.loadgen", "--iface", PEER,
-               "--sessions", str(n), "--user", USER, "--password-file", str(self.tmp / "pw"), "--rate", str(self.rate)]
+               "--sessions", str(n), "--user", USER, "--password-file", str(self.tmp / "pw"), "--rate", str(self.rate),
+               # in-flight cap: most sessions wait ~3 s on the LCP race (see NOTES), so a fixed window of
+               # 500 held the rate near 167/s regardless of the BNG; allow 5 s worth of offered setups
+               "--window", str(max(500, int(self.rate * 5)))]
         lg = Loadgen(cmd)
         self.cleanups.append(lg.stop)
         last: dict = {}
@@ -543,7 +546,7 @@ def run(b: Bench, n: int, traffic: list[float]) -> list[Path]:
     b.out.mkdir(parents=True, exist_ok=True)
     for lvl in levels or [None]:
         res, why = verdict(sess, lvl)
-        name = f"benchmark_{n}_{_g(lvl['target_gbps'])}g" if lvl else f"benchmark_{n}_sessions"
+        name = f"benchmark_{n}_{_g(lvl['target_gbps'])}g" if lvl else f"benchmark_{n}_sessions_{int(b.rate)}ps"
         doc = {"name": name, **base, "traffic": lvl, "result": res, "fail_reasons": why}
         p = b.out / f"{name}.json"
         p.write_text(json.dumps(doc, indent=1))

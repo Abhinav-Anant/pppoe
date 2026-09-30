@@ -1,0 +1,492 @@
+{
+ "name": "benchmark_20000_5g",
+ "date": "2026-09-30T05:44:39+00:00",
+ "host": {
+  "hostname": "amd-r9-01",
+  "cpu_model": "AMD Ryzen 9 7900X 12-Core Processor",
+  "vcpus": 12,
+  "mem_mb": 15990,
+  "kernel": "6.8.0-142-generic",
+  "virtualization": "kvm"
+ },
+ "accel_ppp": "1.14.0",
+ "config": {
+  "aaa": "lab",
+  "shaper": {
+   "attr": "Filter-Id",
+   "down_limiter": "tbf",
+   "up_limiter": "police",
+   "max_rate_mbit": 1000,
+   "require_rate": true
+  },
+  "bench_pool": "100.72.0.0/17",
+  "nat": "SNAT 100.72.0.0/17 -> 198.18.0.1 on bngsink0 (same rule shape as CGNAT)"
+ },
+ "radius_latency_ms": null,
+ "sessions": {
+  "target": 20000,
+  "established": 20000,
+  "failed": 0,
+  "failure_reasons": {},
+  "retransmits_by_state": {
+   "lcp": 16504,
+   "ipcp": 947
+  },
+  "accel_active_after_setup": 20000,
+  "accel_active_after_hold": 20000,
+  "dropped_during_hold": 0,
+  "setup_seconds": 116.72,
+  "setup_rate_per_s": 171.4,
+  "offered_rate_per_s": 300.0,
+  "mem_used_mb": 1505.8,
+  "mem_per_session_kb": 77.1,
+  "cpu_setup": {
+   "seconds": 116.2,
+   "cpu_avg_percent": 27.5,
+   "cpu_per_core_percent": [
+    32.5,
+    29.3,
+    23.9,
+    24.2,
+    25.0,
+    25.3,
+    35.3,
+    29.5,
+    23.2,
+    26.7,
+    27.7,
+    27.0
+   ],
+   "cpu_peak_core_percent_1s": 100.0,
+   "softirq_per_core_percent": [
+    0.7,
+    0.5,
+    0.5,
+    0.4,
+    0.4,
+    0.4,
+    0.3,
+    0.4,
+    0.4,
+    0.4,
+    0.5,
+    0.4
+   ],
+   "softirq_avg_percent": 0.4,
+   "mem_used_mb": 1542.4,
+   "accel_rss_mb": 112.5,
+   "conntrack_max": 39,
+   "softnet_drops": 0,
+   "time_squeeze": 46,
+   "nics": {
+    "bnglab0": {
+     "rx_gbps": 0.001,
+     "tx_gbps": 0.001,
+     "rx_pps": 2053,
+     "tx_pps": 1903,
+     "drops": 0
+    },
+    "bngsink0": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 0,
+     "tx_pps": 0,
+     "drops": 0
+    },
+    "ens18": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 6,
+     "tx_pps": 2,
+     "drops": 0
+    }
+   },
+   "accel_cpu_percent": 5.9,
+   "generators_cpu_percent": 0.6
+  },
+  "cpu_hold": {
+   "seconds": 59.5,
+   "cpu_avg_percent": 8.1,
+   "cpu_per_core_percent": [
+    78.0,
+    4.3,
+    1.0,
+    0.8,
+    0.7,
+    0.7,
+    1.0,
+    1.3,
+    0.9,
+    1.5,
+    0.9,
+    6.2
+   ],
+   "cpu_peak_core_percent_1s": 100.0,
+   "softirq_per_core_percent": [
+    0.1,
+    0.7,
+    0.4,
+    0.3,
+    0.3,
+    0.2,
+    0.5,
+    0.7,
+    0.5,
+    0.7,
+    0.4,
+    0.5
+   ],
+   "softirq_avg_percent": 0.4,
+   "mem_used_mb": 156.6,
+   "accel_rss_mb": 112.5,
+   "conntrack_max": 40,
+   "softnet_drops": 0,
+   "time_squeeze": 0,
+   "nics": {
+    "bnglab0": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 1002,
+     "tx_pps": 1002,
+     "drops": 0
+    },
+    "bngsink0": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 0,
+     "tx_pps": 0,
+     "drops": 0
+    },
+    "ens18": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 6,
+     "tx_pps": 2,
+     "drops": 0
+    }
+   },
+   "accel_cpu_percent": 0.3,
+   "generators_cpu_percent": 0.4
+  },
+  "hold_seconds": 60,
+  "setup_latency_ms": {
+   "p50": 3051.8,
+   "p95": 3540.8,
+   "p99": 6129.8,
+   "max": 6566.1
+  },
+  "teardown_seconds": 100.5,
+  "teardown_rate_per_s": 199.1
+ },
+ "tcp_max": {
+  "down": {
+   "gbps": 24.742,
+   "flows": 48,
+   "failed_flows": 0,
+   "host": {
+    "seconds": 13.3,
+    "cpu_avg_percent": 98.1,
+    "cpu_per_core_percent": [
+     98.2,
+     98.2,
+     98.3,
+     98.0,
+     97.7,
+     98.0,
+     98.1,
+     98.3,
+     98.3,
+     98.1,
+     98.1,
+     98.2
+    ],
+    "cpu_peak_core_percent_1s": 100.0,
+    "softirq_per_core_percent": [
+     83.3,
+     84.2,
+     84.0,
+     83.7,
+     83.2,
+     84.2,
+     83.1,
+     83.7,
+     84.3,
+     84.0,
+     83.6,
+     83.8
+    ],
+    "softirq_avg_percent": 83.8,
+    "mem_used_mb": 34.2,
+    "accel_rss_mb": 388.0,
+    "conntrack_max": 799,
+    "softnet_drops": 0,
+    "time_squeeze": 330,
+    "nics": {
+     "bnglab0": {
+      "rx_gbps": 0.344,
+      "tx_gbps": 26.196,
+      "rx_pps": 506126,
+      "tx_pps": 2163929,
+      "drops": 0
+     },
+     "bngsink0": {
+      "rx_gbps": 25.019,
+      "tx_gbps": 0.312,
+      "rx_pps": 193027,
+      "tx_pps": 505063,
+      "drops": 0
+     },
+     "ens18": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 0.0,
+      "rx_pps": 8,
+      "tx_pps": 2,
+      "drops": 0
+     }
+    },
+    "accel_cpu_percent": 0.6,
+    "generators_cpu_percent": 70.1
+   }
+  },
+  "up": {
+   "gbps": 25.385,
+   "flows": 48,
+   "failed_flows": 0,
+   "host": {
+    "seconds": 13.0,
+    "cpu_avg_percent": 100.0,
+    "cpu_per_core_percent": [
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     100.0,
+     99.9,
+     100.0
+    ],
+    "cpu_peak_core_percent_1s": 100.0,
+    "softirq_per_core_percent": [
+     83.4,
+     82.8,
+     84.8,
+     84.0,
+     83.7,
+     84.1,
+     83.7,
+     84.0,
+     83.7,
+     84.0,
+     81.2,
+     83.8
+    ],
+    "softirq_avg_percent": 83.6,
+    "mem_used_mb": 85.3,
+    "accel_rss_mb": 388.0,
+    "conntrack_max": 898,
+    "softnet_drops": 0,
+    "time_squeeze": 2,
+    "nics": {
+     "bnglab0": {
+      "rx_gbps": 26.629,
+      "tx_gbps": 0.015,
+      "rx_pps": 2203465,
+      "tx_pps": 24655,
+      "drops": 0
+     },
+     "bngsink0": {
+      "rx_gbps": 0.013,
+      "tx_gbps": 26.488,
+      "rx_pps": 23684,
+      "tx_pps": 2202536,
+      "drops": 0
+     },
+     "ens18": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 0.0,
+      "rx_pps": 6,
+      "tx_pps": 2,
+      "drops": 0
+     }
+    },
+    "accel_cpu_percent": 0.6,
+    "generators_cpu_percent": 74.2
+   }
+  }
+ },
+ "thresholds": {
+  "sessions_established_ratio": 1.0,
+  "sessions_dropped_during_hold": 0,
+  "delivered_ratio_min": 0.95,
+  "udp_loss_percent_max": 0.5
+ },
+ "notes": [
+  "Access side is a veth pair inside one VM; subscribers, traffic generators and the BNG share the same vCPUs.",
+  "Virtual-NIC / veth results do not indicate what the software does on physical 10/25/40G NICs.",
+  "Session scale uses a userspace PPPoE client (real PPPoE/LCP/auth/IPCP on the wire, no data); traffic uses real pppd sessions through the per-session shaper.",
+  "AAA is the lab chap-secrets module (aaa: lab): no RADIUS round trip is included.",
+  "This kernel has no CONFIG_IRQ_TIME_ACCOUNTING: forwarding work done in softirq from process context is charged to the sending process (iperf3/pppd), so generators_cpu_percent includes part of the BNG's forwarding cost and softirq_* undercounts it. accel_cpu_percent is accel-pppd alone."
+ ],
+ "traffic": {
+  "target_gbps": 5.0,
+  "sessions_used": 48,
+  "per_session_mbit": 104.2,
+  "per_session_plan_mbit": 1000,
+  "down": {
+   "gbps": 4.847,
+   "flows": 48,
+   "failed_flows": 0,
+   "pps": 432812,
+   "loss_percent": 0.003,
+   "lost_packets": 132,
+   "receiver_socket_drops": 94,
+   "host": {
+    "seconds": 13.2,
+    "cpu_avg_percent": 39.3,
+    "cpu_per_core_percent": [
+     42.5,
+     41.0,
+     39.7,
+     37.6,
+     38.4,
+     39.7,
+     36.4,
+     40.4,
+     38.8,
+     40.5,
+     38.9,
+     37.8
+    ],
+    "cpu_peak_core_percent_1s": 48.0,
+    "softirq_per_core_percent": [
+     21.2,
+     19.8,
+     18.8,
+     16.4,
+     16.8,
+     18.7,
+     14.8,
+     18.6,
+     17.8,
+     19.2,
+     17.0,
+     16.2
+    ],
+    "softirq_avg_percent": 17.9,
+    "mem_used_mb": 2.7,
+    "accel_rss_mb": 167.8,
+    "conntrack_max": 316,
+    "softnet_drops": 0,
+    "time_squeeze": 0,
+    "nics": {
+     "bnglab0": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 5.02,
+      "rx_pps": 1053,
+      "tx_pps": 433798,
+      "drops": 0
+     },
+     "bngsink0": {
+      "rx_gbps": 4.992,
+      "tx_gbps": 0.0,
+      "rx_pps": 432751,
+      "tx_pps": 0,
+      "drops": 0
+     },
+     "ens18": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 0.0,
+      "rx_pps": 6,
+      "tx_pps": 1,
+      "drops": 0
+     }
+    },
+    "accel_cpu_percent": 0.3,
+    "generators_cpu_percent": 35.8
+   }
+  },
+  "up": {
+   "gbps": 4.664,
+   "flows": 48,
+   "failed_flows": 0,
+   "pps": 416450,
+   "loss_percent": 3.327,
+   "lost_packets": 171982,
+   "receiver_socket_drops": 204499,
+   "host": {
+    "seconds": 12.8,
+    "cpu_avg_percent": 99.4,
+    "cpu_per_core_percent": [
+     99.7,
+     99.7,
+     99.7,
+     98.9,
+     99.1,
+     99.8,
+     98.9,
+     98.8,
+     99.7,
+     99.8,
+     99.7,
+     99.3
+    ],
+    "cpu_peak_core_percent_1s": 100.0,
+    "softirq_per_core_percent": [
+     8.4,
+     8.0,
+     8.3,
+     9.5,
+     8.1,
+     7.9,
+     8.4,
+     8.7,
+     9.1,
+     10.0,
+     9.7,
+     7.1
+    ],
+    "softirq_avg_percent": 8.6,
+    "mem_used_mb": 75.6,
+    "accel_rss_mb": 167.8,
+    "conntrack_max": 413,
+    "softnet_drops": 0,
+    "time_squeeze": 3,
+    "nics": {
+     "bnglab0": {
+      "rx_gbps": 4.988,
+      "tx_gbps": 0.0,
+      "rx_pps": 431062,
+      "tx_pps": 1055,
+      "drops": 0
+     },
+     "bngsink0": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 4.961,
+      "rx_pps": 0,
+      "tx_pps": 430009,
+      "drops": 0
+     },
+     "ens18": {
+      "rx_gbps": 0.0,
+      "tx_gbps": 0.0,
+      "rx_pps": 5,
+      "tx_pps": 1,
+      "drops": 0
+     }
+    },
+    "accel_cpu_percent": 0.3,
+    "generators_cpu_percent": 98.2
+   }
+  },
+  "shaper_drops": 0
+ },
+ "result": "FAIL",
+ "fail_reasons": [
+  "up: 4.664 of 5.0 Gbit/s delivered",
+  "up: UDP loss 3.327%"
+ ]
+}

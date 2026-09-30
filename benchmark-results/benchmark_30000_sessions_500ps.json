@@ -1,0 +1,190 @@
+{
+ "name": "benchmark_30000_sessions_500ps",
+ "date": "2026-09-30T06:20:09+00:00",
+ "host": {
+  "hostname": "amd-r9-01",
+  "cpu_model": "AMD Ryzen 9 7900X 12-Core Processor",
+  "vcpus": 12,
+  "mem_mb": 15990,
+  "kernel": "6.8.0-142-generic",
+  "virtualization": "kvm"
+ },
+ "accel_ppp": "1.14.0",
+ "config": {
+  "aaa": "lab",
+  "shaper": {
+   "attr": "Filter-Id",
+   "down_limiter": "tbf",
+   "up_limiter": "police",
+   "max_rate_mbit": 1000,
+   "require_rate": true
+  },
+  "bench_pool": "100.72.0.0/17",
+  "nat": "SNAT 100.72.0.0/17 -> 198.18.0.1 on bngsink0 (same rule shape as CGNAT)"
+ },
+ "radius_latency_ms": null,
+ "sessions": {
+  "target": 30000,
+  "established": 29571,
+  "failed": 429,
+  "failure_reasons": {
+   "timeout-padr": 429
+  },
+  "retransmits_by_state": {
+   "lcp": 26069,
+   "ipcp": 1495,
+   "padi": 2846,
+   "padr": 3334
+  },
+  "accel_active_after_setup": 29571,
+  "accel_active_after_hold": 29571,
+  "dropped_during_hold": 0,
+  "setup_seconds": 77.3,
+  "setup_rate_per_s": 382.5,
+  "offered_rate_per_s": 500.0,
+  "mem_used_mb": 2373.5,
+  "mem_per_session_kb": 82.2,
+  "cpu_setup": {
+   "seconds": 76.8,
+   "cpu_avg_percent": 58.8,
+   "cpu_per_core_percent": [
+    56.8,
+    57.9,
+    58.2,
+    57.1,
+    58.2,
+    59.1,
+    58.9,
+    59.0,
+    61.8,
+    59.8,
+    57.8,
+    61.4
+   ],
+   "cpu_peak_core_percent_1s": 100.0,
+   "softirq_per_core_percent": [
+    1.2,
+    1.0,
+    1.0,
+    0.9,
+    0.9,
+    1.7,
+    1.0,
+    1.0,
+    1.0,
+    1.2,
+    1.0,
+    1.5
+   ],
+   "softirq_avg_percent": 1.1,
+   "mem_used_mb": 2505.2,
+   "accel_rss_mb": 160.7,
+   "conntrack_max": 98,
+   "softnet_drops": 0,
+   "time_squeeze": 333,
+   "nics": {
+    "bnglab0": {
+     "rx_gbps": 0.001,
+     "tx_gbps": 0.001,
+     "rx_pps": 4387,
+     "tx_pps": 3947,
+     "drops": 0
+    },
+    "ens18": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 6,
+     "tx_pps": 2,
+     "drops": 0
+    }
+   },
+   "accel_cpu_percent": 17.1,
+   "generators_cpu_percent": 1.4
+  },
+  "cpu_hold": {
+   "seconds": 59.6,
+   "cpu_avg_percent": 15.9,
+   "cpu_per_core_percent": [
+    61.6,
+    14.2,
+    6.8,
+    2.9,
+    1.9,
+    91.5,
+    1.4,
+    1.8,
+    1.9,
+    1.2,
+    3.2,
+    2.4
+   ],
+   "cpu_peak_core_percent_1s": 100.0,
+   "softirq_per_core_percent": [
+    0.2,
+    1.9,
+    0.5,
+    1.1,
+    0.4,
+    0.0,
+    0.3,
+    0.7,
+    1.0,
+    0.2,
+    2.1,
+    0.8
+   ],
+   "softirq_avg_percent": 0.8,
+   "mem_used_mb": 35.1,
+   "accel_rss_mb": 160.7,
+   "conntrack_max": 43,
+   "softnet_drops": 0,
+   "time_squeeze": 0,
+   "nics": {
+    "bnglab0": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 1479,
+     "tx_pps": 1479,
+     "drops": 0
+    },
+    "ens18": {
+     "rx_gbps": 0.0,
+     "tx_gbps": 0.0,
+     "rx_pps": 6,
+     "tx_pps": 2,
+     "drops": 0
+    }
+   },
+   "accel_cpu_percent": 0.4,
+   "generators_cpu_percent": 0.7
+  },
+  "hold_seconds": 60,
+  "setup_latency_ms": {
+   "p50": 3143.0,
+   "p95": 7821.8,
+   "p99": 11064.0,
+   "max": 20025.7
+  },
+  "teardown_seconds": 300.2,
+  "teardown_rate_per_s": 98.5
+ },
+ "tcp_max": null,
+ "thresholds": {
+  "sessions_established_ratio": 1.0,
+  "sessions_dropped_during_hold": 0,
+  "delivered_ratio_min": 0.95,
+  "udp_loss_percent_max": 0.5
+ },
+ "notes": [
+  "Access side is a veth pair inside one VM; subscribers, traffic generators and the BNG share the same vCPUs.",
+  "Virtual-NIC / veth results do not indicate what the software does on physical 10/25/40G NICs.",
+  "Session scale uses a userspace PPPoE client (real PPPoE/LCP/auth/IPCP on the wire, no data); traffic uses real pppd sessions through the per-session shaper.",
+  "AAA is the lab chap-secrets module (aaa: lab): no RADIUS round trip is included.",
+  "This kernel has no CONFIG_IRQ_TIME_ACCOUNTING: forwarding work done in softirq from process context is charged to the sending process (iperf3/pppd), so generators_cpu_percent includes part of the BNG's forwarding cost and softirq_* undercounts it. accel_cpu_percent is accel-pppd alone."
+ ],
+ "traffic": null,
+ "result": "FAIL",
+ "fail_reasons": [
+  "29571/30000 sessions established"
+ ]
+}

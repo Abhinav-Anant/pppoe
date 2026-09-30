@@ -422,7 +422,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         return sorted(rows, key=lambda r: (r["sessions"], r["target_gbps"] or 0))
 
     @app.get("/api/benchmarks/{name}", tags=["system"])
-    def benchmark(name: str = PathParam(pattern=r"^benchmark_\d+_(\d+(\.\d+)?g|sessions)$"),
+    def benchmark(name: str = PathParam(pattern=r"^benchmark_\d+_(\d+(\.\d+)?g|sessions_\d+ps)$"),
                   node: Node = Depends(the_node), _: Principal = Depends(require())):
         for d in _bench_docs(node):
             if d["name"] == name:

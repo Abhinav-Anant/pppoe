@@ -28,10 +28,12 @@ If the management plane is stopped or removed, established PPPoE sessions keep f
 | 5 | FastAPI management API, RBAC, audit, PostgreSQL | done in lab (`docs/api.md`, `docs/phase5-results.md`) |
 | 6 | Web GUI (dashboard, sessions, QoS, NAT, RADIUS, config, monitoring), WebSockets | done in lab (`docs/gui.md`, `docs/phase6-results.md`) |
 | 7 | Multi-BNG (pinned-TLS node registry, service tokens, proxy, fleet compare/search); easywall console embedded | done in lab (`docs/multi-bng.md`, `docs/phase7-results.md`); second physical node not yet available |
-| 8 | Performance testing | pending |
+| 8 | Tuning module, benchmark framework, 1k–30k sessions × 1–40 Gbit/s matrix | done on bng01 (`docs/performance.md`, `docs/phase8-results.md`, `benchmark-results/`) |
 
-No subscriber-count or throughput capability is claimed until Phase 8 benchmarks on
-appropriate hardware demonstrate it.
+Measured on bng01 (12-vCPU KVM guest, veth lab, generators on the same vCPUs): 30,000 PPPoE sessions held
+(~80 kB each); 1 Gbit/s passes at every session count; 5 Gbit/s down passes on loss but the run fails on
+upload; the shared VM saturates near 0.8 Mpps / 9–11 Gbit/s. **30k subscribers × 40 Gbit/s is not
+demonstrated**; that needs the BNG on its own hardware with an external traffic generator.
 
 ## Docs
 
@@ -43,7 +45,7 @@ appropriate hardware demonstrate it.
 - [docs/multi-bng.md](docs/multi-bng.md) — managing several BNGs from one console
 - [docs/performance.md](docs/performance.md) — tuning module and benchmark framework; [benchmark-results/](benchmark-results/README.md)
 - [docs/phase1-results.md](docs/phase1-results.md)
-- [docs/phase5-results.md](docs/phase5-results.md), [phase6](docs/phase6-results.md), [phase7](docs/phase7-results.md)
+- [docs/phase5-results.md](docs/phase5-results.md), [phase6](docs/phase6-results.md), [phase7](docs/phase7-results.md), [phase8](docs/phase8-results.md)
 
 ## Layout
 
