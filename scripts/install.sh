@@ -55,6 +55,9 @@ log "systemd"
 install -m 0644 "$SRC/system/systemd/accel-ppp.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable accel-ppp.service   # started by the first 'bngctl config apply'
+install -m 0644 "$SRC/system/systemd/bng-tuning.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable bng-tuning.service  # no-op until 'bngctl tuning apply' has been run
 
 log "bngctl"
 python3 -m venv "$PREFIX/venv"

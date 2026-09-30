@@ -113,6 +113,21 @@ def _parser() -> argparse.ArgumentParser:
     x.add_argument("--role", required=True)
     tok.add_parser("revoke").add_argument("name")
     sub.add_parser("tls").add_subparsers(dest="action", required=True).add_parser("fingerprint")
+    tun = sub.add_parser("tuning", help="Linux tuning: diagnose, recommend, apply, roll back").add_subparsers(
+        dest="action", required=True)
+    tun.add_parser("show").add_argument("--json", action="store_true")
+    for name in ("apply", "rollback", "reapply"):
+        tun.add_parser(name)
+    ben = sub.add_parser("benchmark", help="session-scale and traffic benchmarks on the lab").add_subparsers(
+        dest="action", required=True)
+    x = ben.add_parser("run")
+    x.add_argument("--sessions", type=int, required=True)
+    x.add_argument("--traffic", default="", help="comma-separated Gbit/s targets, e.g. 1,5,10")
+    x.add_argument("--rate", type=float, default=300.0, help="offered session setups per second")
+    x.add_argument("--hold", type=int, default=60, help="seconds to hold all sessions before traffic")
+    x.add_argument("--duration", type=int, default=12, help="seconds per traffic measurement")
+    x.add_argument("--out", type=Path, default=Path("/var/lib/bng-platform/benchmark-results"))
+    ben.add_parser("report").add_argument("--out", type=Path, default=Path("/var/lib/bng-platform/benchmark-results"))
     return p
 
 
@@ -268,6 +283,56 @@ def _dispatch(a, paths: Paths, accel: AccelCmd, mgr: ConfigManager) -> int:
     if a.cmd == "tls":
         from app.api.fleet import fingerprint
         print(f"{fingerprint(TLS_CERT.read_text())}  {TLS_CERT}")
+        return 0
+
+    if a.cmd == "tuning":
+        from app import tuning
+        if a.action == "show":
+            rep = tuning.report()
+            if a.json:
+                print(json.dumps(rep, indent=2))
+                return 0
+            d = rep["diagnostics"]
+            print(f"{d['cpus']} CPUs, {d['mem_mb']} MB RAM, governor {d['governor'] or 'n/a'}, irqbalance {d['irqbalance']}")
+            for n in d["nics"]:
+                print(f"nic {n['name']} ({n['driver']}): {n['rx_queues']} rx / {n['tx_queues']} tx queues")
+            for r in d["softnet"]:
+                if r["dropped"] or r["time_squeeze"]:
+                    print(f"cpu{r['cpu']}: softnet dropped={r['dropped']} time_squeeze={r['time_squeeze']}")
+            for r in rep["recommendations"]:
+                mode = "apply " if r["apply"] else "manual"
+                print(f"[{mode}] {r['key']:<40} {r['current']:>12} -> {r['recommended']:<12} {r['reason']}")
+            print(f"{len(rep['applied'])} setting(s) applied by bngctl tuning apply")
+            return 0
+        _require_root()
+        if a.action == "apply":
+            done = tuning.apply(tuning.recommend(tuning.diagnostics()))
+            for r in done:
+                print(f"{r.key}: {r.current} -> {r.recommended}")
+            print(f"{len(done)} setting(s) applied; undo with: sudo bngctl tuning rollback")
+            mgr.audit(**who, action="tuning_apply", result="ok", settings={r.key: r.recommended for r in done})
+        elif a.action == "rollback":
+            old = tuning.rollback()
+            print(f"restored {len(old)} setting(s)")
+            mgr.audit(**who, action="tuning_rollback", result="ok", settings=old)
+        else:
+            print(f"re-applied {tuning.reapply()} setting(s)")
+        return 0
+
+    if a.cmd == "benchmark":
+        from app.bench import runner
+        if a.action == "report":
+            print(runner.write_summary(a.out).read_text())
+            return 0
+        _require_root()
+        traffic = [float(x) for x in a.traffic.split(",") if x.strip()]
+        if a.sessions < 1 or any(t <= 0 for t in traffic):
+            raise ValueError("--sessions and --traffic must be positive")
+        b = runner.Bench(mgr, paths, accel, who["admin"], a.rate, a.hold, a.duration, a.out)
+        mgr.audit(**who, action="benchmark_start", result="ok", sessions=a.sessions, traffic=traffic)
+        files = runner.run(b, a.sessions, traffic)
+        for f in files:
+            print(f)
         return 0
 
     if a.cmd in ("db", "admin", "token"):

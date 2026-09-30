@@ -17,6 +17,7 @@ const NAV: [string, string, string?][] = [
   ["/audit", "Audit", "view_logs"],
   ["/users", "Users", "manage_users"],
   ["/system", "System"],
+  ["/benchmark", "Benchmark"],
 ];
 
 export default function Layout() {

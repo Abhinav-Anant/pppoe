@@ -54,6 +54,8 @@ Status endpoints are readable by any logged-in role.
 | Method | Path | Permission |
 |---|---|---|
 | GET | `/api/system/status` — node, accel version + `show stat`, host load/memory | login |
+| GET | `/api/system/tuning` — CPU/IRQ/NIC/softnet diagnostics and tuning recommendations (apply is CLI-only) | login |
+| GET | `/api/benchmarks`, `/api/benchmarks/{name}` — results written by `bngctl benchmark run` | login |
 | GET | `/api/health` — the `bngctl health` checks | login |
 | GET | `/api/interfaces` — NICs with counters and queue counts | login |
 | GET | `/api/metrics` — point-in-time counters (sessions, subscriber bytes, uplink, conntrack, NAT) | login |

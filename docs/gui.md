@@ -44,6 +44,7 @@ then open `http://localhost:5173`.
 | `/audit` | management audit (DB) and the node's audit (CLI + API) |
 | `/users` | administrators: create, role, disable, password reset (`manage_users`) |
 | `/system` | health checks (every 15 s), node and accel-ppp details, change your own password |
+| `/benchmark` | benchmark results (click a row: per-core CPU, setup latency, notes), tuning recommendations, CPU/IRQ/softnet distribution. Runs and tuning changes are CLI-only ([performance.md](performance.md)) |
 
 Menu entries and buttons follow the role's permissions; the API enforces them regardless.
 
@@ -71,5 +72,4 @@ Pages get `Content-Security-Policy: default-src 'self'` (inline styles allowed f
 - Configurable alert thresholds (spec §43). Failing health checks show as a banner on
   every page.
 - Other RADIUS reply attributes per session: accel-ppp 1.14.0 does not expose them.
-- TLS / access beyond localhost (reverse proxy), `/bng` multi-node views (Phase 7),
-  `/benchmark` (Phase 8).
+- TLS / access beyond localhost (reverse proxy).

@@ -21,6 +21,7 @@ import Radius from "./pages/Radius";
 import SessionDetail from "./pages/SessionDetail";
 import Sessions from "./pages/Sessions";
 import System from "./pages/System";
+import Benchmark from "./pages/Benchmark";
 import Users from "./pages/Users";
 
 const NODE_KEY = "bng.node";
@@ -66,6 +67,7 @@ function Console() {
             <Route path="/audit" element={<Audit />} />
             <Route path="/users" element={<Users />} />
             <Route path="/system" element={<System />} />
+            <Route path="/benchmark" element={<Benchmark />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>

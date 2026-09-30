@@ -1,0 +1,12 @@
+[Unit]
+Description=BNG tuning: re-apply RPS masks set by 'bngctl tuning apply' (sysctls persist via sysctl.d)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/bng-platform/tuning/applied.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/bngctl tuning reapply
+
+[Install]
+WantedBy=multi-user.target

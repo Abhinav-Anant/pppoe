@@ -40,6 +40,7 @@ from app.monitoring import health
 from app.monitoring.sampler import HostRates, SessionRates
 from app.networking import firewall
 from app.networking.interfaces import list_interfaces
+from app import tuning
 
 SID = r"^[0-9A-Za-z]{1,32}$"
 SEARCH = r"^[A-Za-z0-9_.@:\-]{1,64}$"
@@ -384,6 +385,49 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
     @app.get("/api/interfaces", tags=["system"])
     def interfaces(_: Principal = Depends(require())):
         return list_interfaces()
+
+    @app.get("/api/system/tuning", tags=["system"])
+    def tuning_report(_: Principal = Depends(require())):
+        """CPU/IRQ/NIC diagnostics and tuning recommendations. Applying is a CLI step
+        (`bngctl tuning apply`, rollback with `bngctl tuning rollback`)."""
+        return tuning.report()
+
+    def _bench_docs(node: Node) -> list[dict]:
+        out = []
+        for f in sorted((node.paths.state / "benchmark-results").glob("benchmark_*.json")):
+            try:
+                out.append(json.loads(f.read_text()))
+            except (OSError, ValueError):
+                continue
+        return out
+
+    @app.get("/api/benchmarks", tags=["system"])
+    def benchmarks(node: Node = Depends(the_node), _: Principal = Depends(require())):
+        """Results written by `bngctl benchmark run` (running one restarts accel-ppp: CLI only)."""
+        rows = []
+        for d in _bench_docs(node):
+            s, t = d["sessions"], d.get("traffic") or {}
+            host = (t.get("down") or {}).get("host") or s.get("cpu_hold") or {}
+            rows.append({"name": d["name"], "date": d.get("date"), "result": d["result"],
+                         "fail_reasons": d.get("fail_reasons", []), "sessions": s["target"],
+                         "established": s["established"], "setup_rate_per_s": s.get("setup_rate_per_s"),
+                         "setup_p95_ms": (s.get("setup_latency_ms") or {}).get("p95"),
+                         "target_gbps": t.get("target_gbps"),
+                         "down_gbps": (t.get("down") or {}).get("gbps"), "up_gbps": (t.get("up") or {}).get("gbps"),
+                         "down_loss": (t.get("down") or {}).get("loss_percent"),
+                         "up_loss": (t.get("up") or {}).get("loss_percent"),
+                         "down_pps": (t.get("down") or {}).get("pps"),
+                         "cpu_avg": host.get("cpu_avg_percent"), "cpu_peak_core": host.get("cpu_peak_core_percent_1s"),
+                         "mem_used_mb": s.get("mem_used_mb")})
+        return sorted(rows, key=lambda r: (r["sessions"], r["target_gbps"] or 0))
+
+    @app.get("/api/benchmarks/{name}", tags=["system"])
+    def benchmark(name: str = PathParam(pattern=r"^benchmark_\d+_(\d+(\.\d+)?g|sessions)$"),
+                  node: Node = Depends(the_node), _: Principal = Depends(require())):
+        for d in _bench_docs(node):
+            if d["name"] == name:
+                return d
+        raise HTTPException(404, "no such benchmark")
 
     @app.get("/api/metrics", tags=["system"])
     def metrics(node: Node = Depends(the_node), _: Principal = Depends(require())):

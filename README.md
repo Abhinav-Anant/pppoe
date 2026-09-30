@@ -41,6 +41,7 @@ appropriate hardware demonstrate it.
 - [docs/api.md](docs/api.md) — management API, roles, endpoints
 - [docs/gui.md](docs/gui.md) — web GUI: access, build, pages, live data
 - [docs/multi-bng.md](docs/multi-bng.md) — managing several BNGs from one console
+- [docs/performance.md](docs/performance.md) — tuning module and benchmark framework; [benchmark-results/](benchmark-results/README.md)
 - [docs/phase1-results.md](docs/phase1-results.md)
 - [docs/phase5-results.md](docs/phase5-results.md), [phase6](docs/phase6-results.md), [phase7](docs/phase7-results.md)
 

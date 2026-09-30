@@ -31,7 +31,9 @@ from app.accel.validate import validate_text
 from app.config.model import BngConfig, load
 
 # accel-pppd reads these only at start; `accel-cmd reload` does not apply them.
-RESTART_SECTIONS = {"modules", "core", "cli"}
+# ip-pool: 1.14.0's ippool.c registers no EV_CONFIG_RELOAD handler, so a reload leaves the
+# old pools in place (found by the Phase 8 benchmark: a new default pool failed every login).
+RESTART_SECTIONS = {"modules", "core", "cli", "ip-pool"}
 
 
 class ApplyError(Exception):

@@ -12,7 +12,11 @@ fi
 bash "$(dirname "$0")/lab/lab-down.sh" || true
 systemctl disable --now bng-api.service bng-api-remote.service 2>/dev/null || true
 systemctl disable --now accel-ppp.service 2>/dev/null || true
-rm -f /etc/systemd/system/accel-ppp.service /etc/systemd/system/bng-api.service /etc/systemd/system/bng-api-remote.service
+bngctl tuning rollback 2>/dev/null || true   # restores the values from before 'bngctl tuning apply'
+systemctl disable bng-tuning.service 2>/dev/null || true
+rm -f /etc/systemd/system/accel-ppp.service /etc/systemd/system/bng-api.service /etc/systemd/system/bng-api-remote.service   /etc/systemd/system/bng-tuning.service
+nft delete table ip bng_bench 2>/dev/null || true   # left behind only by an interrupted benchmark
+ip netns del bngsink 2>/dev/null || true
 systemctl daemon-reload
 if [ -f /opt/bng-platform/accel-ppp.manifest ]; then xargs -d '\n' rm -f < /opt/bng-platform/accel-ppp.manifest; fi
 nft delete table inet bng_filter 2>/dev/null || true

@@ -85,6 +85,17 @@ def test_restart_needed_is_refused(env, base_cfg):
     assert daemon.calls[-1] == "restart"
 
 
+def test_ip_pool_change_needs_restart(env, base_cfg):
+    """accel-ppp 1.14.0 does not reload [ip-pool]: a new pool only exists after a restart."""
+    mgr, paths, daemon, _, tmp = env
+    mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    base_cfg["ip_pools"]["pools"].append({"name": "more", "network": "100.72.0.0/24"})
+    with pytest.raises(ApplyError, match="ip-pool"):
+        mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
+    assert mgr.apply(tmp / "c.yaml", "root", "t", allow_restart=True) == "applied as version 2"
+    assert daemon.calls[-1] == "restart"
+
+
 def test_failed_health_rolls_back(env, base_cfg):
     mgr, paths, daemon, failures, tmp = env
     mgr.apply(write_cfg(tmp / "c.yaml", base_cfg), "root", "t")
