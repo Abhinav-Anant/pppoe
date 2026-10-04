@@ -159,3 +159,36 @@ def test_easywall_proxy(api, monkeypatch):
     assert "x-frame-options" not in r.headers and r.headers["content-security-policy"].endswith("frame-ancestors 'self'")
     assert "Path=/easywall/" in r.headers["set-cookie"]
     assert seen["path"] == "/" and seen["cookie"] == "ew=1" and seen["origin"] == easywall._UP_ORIGIN
+
+
+def test_proxied_websocket_ends_when_the_session_is_revoked(api, remote, monkeypatch):
+    import asyncio
+    from sqlalchemy import select
+    from starlette.websockets import WebSocketDisconnect
+    from tests.test_api import ws_headers
+
+    class Up:  # a node socket that stays open and silent
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.sleep(3600)
+
+        async def send(self, m):
+            pass
+
+    monkeypatch.setattr(fleet.websockets, "connect", lambda *a, **k: Up())
+    monkeypatch.setattr(fleet, "RECHECK_S", 0.05)
+    login(api, "noc_operator")
+    with api.websocket_connect("/api/nodes/bng02/ws/metrics", headers=ws_headers(api)) as ws:
+        with db.make_sessionmaker(api.url)() as s:  # logout / disable elsewhere
+            s.query(db.AuthSession).delete()
+            s.commit()
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_text()

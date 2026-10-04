@@ -9,7 +9,7 @@ const NAV: [group: string, items: Item[]][] = [
     ["/bng", "All gateways"]]],
   ["Service", [["/qos", "Plans & shaping"], ["/radius", "RADIUS"], ["/nat", "NAT"], ["/pppoe", "PPPoE & pools"],
     ["/interfaces", "Interfaces"], ["/firewall", "Firewall", "manage_firewall"]]],
-  ["Platform", [["/configuration", "Configuration"], ["/audit", "Audit log", "view_logs"], ["/users", "Administrators", "manage_users"],
+  ["Platform", [["/configuration", "Configuration", "view_config"], ["/audit", "Audit log", "view_logs"], ["/users", "Administrators", "manage_users"],
     ["/system", "System"], ["/benchmark", "Performance"]]],
 ];
 

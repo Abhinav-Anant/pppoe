@@ -139,6 +139,13 @@ def _int(s: str) -> int | None:
     return int(s) if s.isdigit() else None
 
 
+def _usable(net) -> int:
+    """Addresses accel-ppp hands out: .1-.254 of each /24 (see accel.render._host_ranges)."""
+    if net.prefixlen < 24:
+        return 254 * (1 << (24 - net.prefixlen))
+    return sum(1 for a in net if int(a) & 255 not in (0, 255))
+
+
 def _vlan(ifname: str) -> int | None:
     """ens18.4044 -> 4044 (the naming bng-platform and netplan use for VLAN interfaces)."""
     base, dot, tag = ifname.rpartition(".")
@@ -287,6 +294,9 @@ class RateLimiter:
     def allow(self, ip: str) -> bool:
         with self._lock:
             now = time.monotonic()
+            if len(self.buckets) > 4096:  # an idle IP's bucket is full again: forget it
+                idle = self.burst / self.rate
+                self.buckets = {k: v for k, v in self.buckets.items() if now - v[1] < idle}
             tokens, last = self.buckets.get(ip, (self.burst, now))
             tokens = min(self.burst, tokens + (now - last) * self.rate)
             ok = tokens >= 1
@@ -370,9 +380,9 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     @app.get("/api/auth/me", tags=["auth"])
     def me(request: Request, p: Principal = Depends(require()), db: Session = Depends(get_db)):
-        """Also re-issues the CSRF token, e.g. after a browser reload lost it."""
+        """Also returns the session's CSRF token (the same value in every tab), e.g. after a reload lost it."""
         return {"username": p.username, "role": p.role, "permissions": sorted(p.permissions),
-                "csrf_token": auth.rotate_csrf(db, request.cookies.get(auth.COOKIE, ""))}
+                "csrf_token": auth.csrf_for(db, request.cookies.get(auth.COOKIE, ""))}
 
     @app.post("/api/auth/password", tags=["auth"])
     def change_password(body: PasswordIn, request: Request, p: Principal = Depends(require()),
@@ -585,25 +595,25 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         ips = [IPv4Address(r["ip"]) for r in node.sessions() if r["ip"]]
         out = []
         for p in cfg.ip_pools.pools:
-            usable = sum(1 for a in p.network if int(a) & 255 not in (0, 255))
+            usable = _usable(p.network)
             used = sum(1 for a in ips if a in p.network)
             out.append({**p.model_dump(mode="json"), "usable": usable, "used": used})
         return {"gw_ip_address": str(cfg.ip_pools.gw_ip_address), "default": cfg.ip_pools.default, "pools": out}
 
     # --- configuration ----------------------------------------------------
     @app.get("/api/config", tags=["config"])
-    def config(node: Node = Depends(the_node), _: Principal = Depends(require())):
+    def config(node: Node = Depends(the_node), _: Principal = Depends(require("view_config"))):
         hist = node.mgr.history()
         text = node.paths.config.read_text(encoding="utf-8")
         return {"version": hist[-1]["version"] if hist else None, "config": yaml.safe_load(text), "yaml": text}
 
     @app.get("/api/config/history", tags=["config"])
-    def config_history(node: Node = Depends(the_node), _: Principal = Depends(require())):
+    def config_history(node: Node = Depends(the_node), _: Principal = Depends(require("view_config"))):
         return node.mgr.history()
 
     @app.get("/api/config/versions/{version}", tags=["config"], response_class=PlainTextResponse)
     def config_version(version: int = PathParam(ge=1), node: Node = Depends(the_node),
-                       _: Principal = Depends(require())):
+                       _: Principal = Depends(require("view_config"))):
         """Download a version's config.yaml."""
         f = node.paths.versions / f"{version:04d}" / "config.yaml"
         if not f.exists():
@@ -613,7 +623,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
     @app.get("/api/config/versions/{version}/diff", tags=["config"], response_class=PlainTextResponse)
     def config_version_diff(version: int = PathParam(ge=1), against: int | None = Query(None, ge=1),
-                            node: Node = Depends(the_node), _: Principal = Depends(require())):
+                            node: Node = Depends(the_node), _: Principal = Depends(require("view_config"))):
         """Unified diff of config.yaml from `against` (default: the previous version) to `version`."""
         def text(v: int) -> str:
             f = node.paths.versions / f"{v:04d}" / "config.yaml"
@@ -626,7 +636,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         return "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"v{base}", f"v{version}"))
 
     @app.post("/api/config/validate", tags=["config"])
-    def config_validate(body: ConfigIn, node: Node = Depends(the_node), p: Principal = Depends(require())):
+    def config_validate(body: ConfigIn, node: Node = Depends(the_node), p: Principal = Depends(require("view_config"))):
         data, text = body.parsed()
         cfg = _model(data)
         with _candidate(node, data, text) as f:
@@ -717,7 +727,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         return _user(u)
 
     # --- live updates (WebSocket) -----------------------------------------
-    async def ws_principal(ws: WebSocket, perm: str | None = None) -> Principal | None:
+    async def ws_principal(ws: WebSocket, perm: str | None = None, touch: bool = True) -> Principal | None:
         """Cookie auth on the handshake; a browser's Origin must be this host (no cross-site
         sockets). Browsers always send Origin; a console calling with a Bearer token does not."""
         origin = ws.headers.get("origin", "")
@@ -728,7 +738,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
 
         def check() -> Principal:
             with maker() as db:
-                return auth.authenticate(ws, db)
+                return auth.authenticate(ws, db, touch=touch)
         try:
             p = await run_in_threadpool(check)
         except (HTTPException, OperationalError):
@@ -752,7 +762,7 @@ def create_app(node: Node | None = None, database_url: str | None = None) -> Fas
         try:
             n = 0
             while not task.done():
-                if n and n % 30 == 0 and not await ws_principal(ws, perm):  # logout/expiry ends the stream
+                if n and n % 30 == 0 and not await ws_principal(ws, perm, touch=False):  # logout/expiry ends the stream
                     return
                 payload = await run_in_threadpool(produce)
                 if payload is not None:

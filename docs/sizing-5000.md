@@ -92,7 +92,7 @@ radius:
   `100.64.16.0/20` first means today's subscribers don't change range. A pool change **restarts
   accel-ppp**, and every subscriber reconnects: measured at 32 s for 5,000. Do it in a maintenance
   window.
-- **NAT: at least a /26 of public addresses (~78 subscribers per IP).**
+- **NAT: at least a /26 of public addresses (62 usable here, ~81 subscribers per IP).**
   - One IP has 64,512 ports. Linux can reuse a port toward different destinations, but at 5,000
     subscribers one address is still a CGNAT bottleneck, and it gets blocklisted.
   - `persistent` pins each subscriber to one public IP.
@@ -131,13 +131,18 @@ Measure the per-subscriber peak on your current network; that number decides eve
 
 | Peak need | This VM as it is | What is needed |
 |---|---|---|
-| ≤ 1 Gbit/s | Tested: PASS | Only the uplink. **ens18 measured ~0.5 Gbit/s down in Phase 3.** |
+| ≤ 1 Gbit/s | Tested: PASS (0.97 / 0.98 Gbit/s, Phase 8) | Only the uplink. The ~0.5 Gbit/s on ens18 in Phase 3 was limited by the public test servers, not the BNG. |
 | 1–5 Gbit/s | Download tested clean to 4.84 Gbit/s | Proxmox multiqueue on the NICs (`queues=12`, then `ethtool -L ens18 combined 12`), and a 10G uplink |
 | 5–20 Gbit/s | Not demonstrated | The BNG on its own host with passthrough/SR-IOV 10/25G NICs, then re-run `bngctl benchmark` with an external generator |
 
 **Before go-live:**
+0. Stop the demo (`sudo systemctl disable --now bng-demo bng-radius-lab`) and install the RADIUS shared
+   secret for the Jaze address: `sudo bngctl radius secret --server <address>`.
 1. Apply the config above: `bngctl config apply --allow-restart` (it restarts for the pool change).
-2. Confirm the firewall: `bngctl firewall apply`, then `confirm` from a new SSH session.
+   Config validation now rejects an `ip_pools` network that no `nat.subscribers` entry covers.
+2. **Immediately** load the firewall: `bngctl firewall apply`, then `confirm` from a new SSH session.
+   Until then the forward and NAT rules still list the old networks, so subscribers that reconnect
+   into the new overflow pool have no connectivity.
 3. Test a Jaze login, an accounting start, an interim and a stop, and one CoA.
 4. Enable multiqueue in Proxmox if the peak is above 1 Gbit/s.
 5. Put a second, separate NIC on the access side. Today PPPoE and the uplink share ens18 through a

@@ -3,10 +3,11 @@
 - Passwords: scrypt (stdlib), per-password salt, constant-time compare.
 - Sessions: random token in an HttpOnly SameSite=Strict cookie; only its SHA-256
   is stored, so a database dump cannot be replayed as a login.
-- CSRF: every state-changing request must echo the per-session token in
-  X-CSRF-Token (login itself needs X-Requested-With, which forces a CORS preflight
+- CSRF: every state-changing request must echo the per-session token (derived from the session
+  token, so every tab of one login gets the same value) in X-CSRF-Token (login itself needs X-Requested-With, which forces a CORS preflight
   that this API never grants).
-- Brute force: failed logins are counted from audit_logs (per IP and per username).
+- Brute force: failed logins are counted from audit_logs, per IP and per (username, IP), so a
+  stranger cannot lock the real admin out by failing logins for that name from elsewhere.
 """
 from __future__ import annotations
 
@@ -23,13 +24,13 @@ from sqlalchemy.orm import Session
 
 from app.db import Admin, ApiToken, AuditLog, AuthSession, now
 
-PERMISSIONS = ("view_sessions", "disconnect_sessions", "change_qos", "change_radius", "change_network",
+PERMISSIONS = ("view_sessions", "view_config", "disconnect_sessions", "change_qos", "change_radius", "change_network",
                "change_nat", "apply_config", "rollback_config", "view_logs", "manage_users",
                "manage_firewall", "manage_nodes")
 ROLES: dict[str, frozenset[str]] = {
     "super_admin": frozenset(PERMISSIONS),
     "network_admin": frozenset(PERMISSIONS) - {"manage_users"},
-    "noc_operator": frozenset({"view_sessions", "disconnect_sessions", "view_logs"}),
+    "noc_operator": frozenset({"view_sessions", "view_config", "disconnect_sessions", "view_logs"}),
     "read_only": frozenset({"view_sessions"}),
 }
 
@@ -73,6 +74,11 @@ def _sha(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+def _csrf(token: str) -> str:
+    """Per-session CSRF token. The session cookie is HttpOnly, so a cross-site page can compute neither."""
+    return _sha("csrf:" + token)
+
+
 def client_ip(request: Request) -> str:
     # bng-api binds to 127.0.0.1 behind an SSH tunnel / the Phase 6 reverse proxy;
     # proxy headers are not trusted until that proxy exists.
@@ -105,7 +111,7 @@ def _recent_failures(db: Session, **where) -> int:
 
 def login(db: Session, username: str, password: str, ip: str) -> tuple[Admin, str, str]:
     """-> (admin, session token, csrf token). Raises HTTPException 401/429."""
-    if _recent_failures(db, ip=ip) >= MAX_FAILS_PER_IP or _recent_failures(db, admin=username) >= MAX_FAILS_PER_USER:
+    if _recent_failures(db, ip=ip) >= MAX_FAILS_PER_IP or _recent_failures(db, admin=username, ip=ip) >= MAX_FAILS_PER_USER:
         audit(db, "login", "throttled", admin=username, ip=ip)
         raise HTTPException(429, "too many failed logins; try again later")
     admin = db.scalar(select(Admin).where(Admin.username == username))
@@ -114,7 +120,8 @@ def login(db: Session, username: str, password: str, ip: str) -> tuple[Admin, st
         audit(db, "login", "failed", admin=username, ip=ip,
               reason="disabled" if admin and ok else "bad credentials")
         raise HTTPException(401, "invalid username or password")
-    token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    token = secrets.token_urlsafe(32)
+    csrf = _csrf(token)
     db.add(AuthSession(token_hash=_sha(token), csrf_hash=_sha(csrf), admin_id=admin.id, source_ip=ip))
     admin.last_login_at = now()
     db.commit()
@@ -132,15 +139,9 @@ def _session(db: Session, token: str) -> AuthSession | None:
     return db.scalar(select(AuthSession).where(AuthSession.token_hash == _sha(token))) if token else None
 
 
-def rotate_csrf(db: Session, token: str) -> str | None:
+def csrf_for(db: Session, token: str) -> str | None:
     """None for a bearer-token caller: it has no cookie session and needs no CSRF token."""
-    s = _session(db, token)
-    if not s:
-        return None
-    csrf = secrets.token_urlsafe(32)
-    s.csrf_hash = _sha(csrf)
-    db.commit()
-    return csrf
+    return _csrf(token) if _session(db, token) else None
 
 
 def drop_other_sessions(db: Session, admin_id: int, keep_token: str) -> None:
@@ -188,7 +189,9 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=now().tzinfo)
 
 
-def authenticate(request: Request, db: Session, csrf: bool = True) -> Principal:
+def authenticate(request: Request, db: Session, csrf: bool = True, touch: bool = True) -> Principal:
+    """touch=False: a background re-check (open WebSocket) must not count as activity, or an
+    unattended dashboard tab would keep the session from ever going idle."""
     bearer = request.headers.get("authorization", "")
     if bearer.startswith("Bearer "):  # not a cookie, so no CSRF exposure
         return _token_principal(request, db, bearer[7:].strip())
@@ -204,10 +207,11 @@ def authenticate(request: Request, db: Session, csrf: bool = True) -> Principal:
         raise HTTPException(401, "not logged in")
     if csrf and request.scope["type"] == "http" and request.method not in ("GET", "HEAD", "OPTIONS"):
         sent = request.headers.get("x-csrf-token", "")
-        if not hmac.compare_digest(_sha(sent), s.csrf_hash):
+        if not hmac.compare_digest(sent, _csrf(token)):
             raise HTTPException(403, "missing or wrong X-CSRF-Token")
-    s.last_seen_at = t
-    db.commit()
+    if touch:
+        s.last_seen_at = t
+        db.commit()
     return Principal(admin.username, admin.role, client_ip(request))
 
 

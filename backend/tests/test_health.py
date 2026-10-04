@@ -41,3 +41,24 @@ def test_firewall_render(base_cfg, radius_cfg):
     assert lab.splitlines()[1:3] == ["table inet bng_filter", "delete table inet bng_filter"]
     rad = firewall.render(BngConfig.model_validate(radius_cfg))
     assert "udp dport 3799 ip saddr { 192.0.2.10/32 } accept" in rad
+
+
+def test_dns_check_queries_the_configured_servers(base_cfg):
+    import socket
+    import threading
+
+    assert health.check_dns(BngConfig.model_validate(base_cfg)).status == "SKIP"  # no dns configured
+    srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    srv.bind(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+
+    def answer():
+        data, addr = srv.recvfrom(512)
+        srv.sendto(data[:2] + b"\x80\x00" + data[4:], addr)  # same id, QR=1
+
+    threading.Thread(target=answer, daemon=True).start()
+    base_cfg["dns"] = ["127.0.0.1"]
+    cfg = BngConfig.model_validate(base_cfg)
+    assert health.check_dns(cfg, port=port, timeout=2).status == "PASS"
+    srv.close()
+    assert health.check_dns(cfg, port=port, timeout=0.3).status == "FAIL"

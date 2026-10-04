@@ -189,3 +189,18 @@ def test_changing_pppoe_interface_options_readds(env, base_cfg):
 
 def test_changed_sections():
     assert changed_sections("[a]\nx=1\n[b]\ny=1\n", "[a]\nx=1\n[b]\ny=2\n[c]\n") == {"b", "c"}
+
+
+def test_restore_brings_back_per_server_secrets(env, radius_cfg):
+    mgr, paths, _, _, tmp = env
+    paths.secret.parent.mkdir(parents=True)
+    paths.secret.write_text(SECRET + "\n")
+    srv = paths.radius_secrets / "192.0.2.10.secret"
+    srv.parent.mkdir()
+    srv.write_text("Server-own-Secret1\n")
+    mgr.apply(write_cfg(tmp / "c.yaml", radius_cfg), "root", "t")
+    archive = mgr.backup_archive()
+    srv.unlink()  # a rebuilt node: the per-server secret is gone
+    mgr.restore_archive(archive, "root", "t")
+    assert srv.read_text().strip() == "Server-own-Secret1"
+    assert "Server-own-Secret1" in paths.secrets_include.read_text()

@@ -208,6 +208,11 @@ class BngConfig(Strict):
                 for addr in filter(None, (p.public_start, p.public_end)):
                     if any(addr in n for n in pool_nets + p.subscribers):
                         raise ValueError(f"nat pool {p.name!r}: public address {addr} is inside subscriber pool")
+            covers = [n for p in self.nat.pools for n in p.subscribers]
+            for pool in self.ip_pools.pools:  # the forward and SNAT rules are built from nat subscribers only
+                if not any(pool.network.subnet_of(n) for n in covers):
+                    raise ValueError(f"ip pool {pool.name!r} ({pool.network}) is not covered by any nat subscribers "
+                                     "network: its subscribers would get no forwarding and no NAT")
         return self
 
     def subscriber_networks(self) -> list[IPv4Network]:

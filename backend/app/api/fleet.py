@@ -37,6 +37,7 @@ NAME = r"^[A-Za-z0-9_.\-]{1,64}$"
 URL = r"^https://[A-Za-z0-9.\-]+(:\d{1,5})?$"
 PROXY_PATH = re.compile(r"^(?!auth/|nodes|fleet|ws/)[a-z0-9_\-/.]{1,200}$")
 TIMEOUT = 10.0
+RECHECK_S = 60.0  # how often a proxied WebSocket re-validates the admin's session
 
 
 def secrets_dir() -> Path:
@@ -257,7 +258,12 @@ def add_routes(app, ws_principal) -> None:
                 async def upward():
                     while True:
                         await up.send(await ws.receive_text())
-                tasks = [asyncio.create_task(down()), asyncio.create_task(upward())]
+                async def recheck():  # logout, disable or expiry must end the stream, as for local sockets
+                    while await ws_principal(ws, "view_sessions" if kind == "sessions" else None, touch=False):
+                        await asyncio.sleep(RECHECK_S)
+                    await up.close()
+
+                tasks = [asyncio.create_task(down()), asyncio.create_task(upward()), asyncio.create_task(recheck())]
                 await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for t in tasks:
                     t.cancel()
