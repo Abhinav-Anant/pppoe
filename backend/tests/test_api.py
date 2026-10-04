@@ -189,11 +189,11 @@ def test_users_admin(api):
     assert r.status_code == 401
 
 
-def test_logout_and_me_rotates_csrf(api):
+def test_logout_and_me_keeps_csrf_valid_for_other_tabs(api):
     old = login(api, "read_only")["csrf_token"]
     me = api.get("/api/auth/me").json()
-    assert me["csrf_token"] != old
-    api.headers["X-CSRF-Token"] = me["csrf_token"]
+    assert me["csrf_token"] == old  # a second tab's /me must not invalidate this tab's token
+    api.headers["X-CSRF-Token"] = old
     assert api.post("/api/auth/logout").status_code == 200
     assert api.get("/api/sessions").status_code == 401
 
@@ -293,3 +293,55 @@ def test_branding_public_and_bounded(api):
     assert api.get("/api/branding").json() == {"name": "BNG Console", "tagline": "Broadband network gateway"}
     (api.node.paths.etc / "branding.json").write_text('{"name": "Acme Fibre", "tagline": 5, "x": "y"}')
     assert api.get("/api/branding").json() == {"name": "Acme Fibre", "tagline": "Broadband network gateway"}
+
+
+def test_lockout_is_per_source_ip(api):
+    with db.make_sessionmaker(api.url)() as s:
+        for _ in range(auth.MAX_FAILS_PER_USER):
+            auth.audit(s, "login", "failed", admin="read_only", ip="203.0.113.9")
+    login(api, "read_only")  # the real admin, from another address, is not locked out
+
+
+def test_config_reads_need_view_config(api):
+    login(api, "read_only")
+    assert api.get("/api/config").status_code == 403
+    assert api.get("/api/config/history").status_code == 403
+    assert api.post("/api/config/validate", json={"yaml": "x: 1"}).status_code == 403
+    api.cookies.clear()
+    login(api, "noc_operator")
+    assert api.get("/api/config").status_code == 200
+    assert api.get("/api/config/history").status_code == 200
+
+
+def test_pool_usable_is_arithmetic():
+    from ipaddress import IPv4Network
+    from app.api.main import _usable
+    assert _usable(IPv4Network("100.64.16.0/20")) == 4064
+    assert _usable(IPv4Network("100.64.0.0/24")) == 254
+    assert _usable(IPv4Network("100.64.0.252/30")) == 3  # .252-.254; .255 is skipped
+    assert _usable(IPv4Network("10.0.0.0/8")) == 254 * 65536  # returns at once, no 16M-address walk
+
+
+def test_rate_limiter_forgets_idle_ips():
+    from app.api.main import RateLimiter
+    rl = RateLimiter(rate=1000, burst=1)
+    rl.buckets = {f"ip{i}": (0, 0.0) for i in range(5000)}  # long idle
+    rl.allow("new")
+    assert list(rl.buckets) == ["new"]
+
+
+def test_ws_recheck_does_not_extend_idle_session(api):
+    from datetime import timedelta
+    login(api, "read_only")
+    with db.make_sessionmaker(api.url)() as s:
+        sess = s.scalar(select(db.AuthSession))
+        old = sess.last_seen_at = auth.now() - timedelta(minutes=10)
+        s.commit()
+
+    class Req:  # what authenticate reads from a websocket handshake
+        headers, method, scope, client = {}, "GET", {"type": "websocket"}, None
+        cookies = {auth.COOKIE: api.cookies.get(auth.COOKIE)}
+
+    with db.make_sessionmaker(api.url)() as s:
+        auth.authenticate(Req, s, touch=False)
+        assert auth._aware(s.scalar(select(db.AuthSession)).last_seen_at) == auth._aware(old)

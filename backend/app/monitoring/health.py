@@ -102,12 +102,23 @@ def check_route() -> Check:
     return _ok("Internet route", bool(routes), detail)
 
 
-def check_dns() -> Check:
-    try:
-        socket.getaddrinfo("github.com", 443)
-        return Check("DNS", "PASS")
-    except OSError as e:
-        return Check("DNS", "FAIL", str(e))
+def check_dns(cfg: BngConfig, port: int = 53, timeout: float = 2.0) -> Check:
+    """The resolvers handed to subscribers must answer (a root priming query: no third-party name needed)."""
+    if not cfg.dns:
+        return Check("DNS", "SKIP", "no dns servers configured")
+    query = bytes.fromhex("133701000001000000000000" "00" "0002" "0001")  # id 0x1337, RD, ". IN NS"
+    down = []
+    for ip in map(str, cfg.dns):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(timeout)
+            try:
+                s.sendto(query, (ip, port))
+                if s.recvfrom(512)[0][:2] == query[:2]:
+                    continue
+            except OSError:
+                pass
+        down.append(ip)
+    return _ok("DNS", not down, f"no answer from {', '.join(down)}" if down else ", ".join(map(str, cfg.dns)))
 
 
 def check_nftables() -> Check:
@@ -223,7 +234,7 @@ def run_all(cfg: BngConfig, accel: AccelCmd, secret: str | dict[str, str] | None
             db_url: str | None = None) -> list[Check]:
     return [
         check_service(), check_cli(accel, wait_s=0), check_pppoe(cfg, accel), check_radius(cfg, secret),
-        check_nic(cfg), check_route(), check_dns(), check_nftables(), check_conntrack(),
+        check_nic(cfg), check_route(), check_dns(cfg), check_nftables(), check_conntrack(),
         check_rates(cfg, accel), check_nat(cfg), check_easywall(),
         check_api(), check_database(db_url),
     ]

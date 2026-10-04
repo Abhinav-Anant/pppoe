@@ -99,3 +99,12 @@ def test_nat_overlapping_subscribers_rejected(base_cfg):
     base_cfg["nat"] = {"pools": [p, dict(p, name="b", subscribers=["100.64.0.128/25"])]}
     with pytest.raises(ValidationError, match="overlap"):
         BngConfig.model_validate(base_cfg)
+
+
+def test_nat_must_cover_every_ip_pool(base_cfg):
+    base_cfg["nat"] = NAT
+    base_cfg["ip_pools"]["pools"].append({"name": "q", "network": "100.64.32.0/20"})
+    with pytest.raises(ValidationError, match="not covered by any nat subscribers"):
+        BngConfig.model_validate(base_cfg)
+    base_cfg["nat"] = {"pools": [dict(NAT["pools"][0], subscribers=["100.64.0.0/24", "100.64.32.0/20"])]}
+    BngConfig.model_validate(base_cfg)

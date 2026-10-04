@@ -27,9 +27,9 @@ sudo bngctl admin list | passwd <name> | disable <name> | enable <name> | delete
 | | |
 |---|---|
 | Login | `POST /api/auth/login` `{"username","password"}` with header `X-Requested-With: bng` |
-| Session | cookie `bng_session`: HttpOnly, SameSite=Strict, Secure, path `/api`; 30 min idle, 12 h max. Only its SHA-256 is stored |
-| CSRF | every POST/PUT/PATCH/DELETE needs `X-CSRF-Token` = `csrf_token` from login (or from `GET /api/auth/me`, which re-issues it) |
-| Brute force | 5 failed logins per username or 20 per IP in 15 min → 429 |
+| Session | cookie `bng_session`: HttpOnly, SameSite=Strict, Secure, path `/api`; 30 min idle (open WebSocket re-checks do not count as activity), 12 h max. Only its SHA-256 is stored |
+| CSRF | every POST/PUT/PATCH/DELETE needs `X-CSRF-Token` = `csrf_token` from login (or from `GET /api/auth/me`; it is the same for every tab of one login) |
+| Brute force | 5 failed logins per username *from one IP* or 20 per IP in 15 min → 429 (a stranger cannot lock an admin out from elsewhere) |
 | Rate limit | 20 req/s per client IP, burst 60 → 429 |
 | Audit | logins (ok / failed / throttled), logout, password changes, user changes, disconnects, config apply/rollback → `audit_logs` table |
 
@@ -38,6 +38,7 @@ sudo bngctl admin list | passwd <name> | disable <name> | enable <name> | delete
 | Permission | super_admin | network_admin | noc_operator | read_only |
 |---|:-:|:-:|:-:|:-:|
 | view_sessions | ✓ | ✓ | ✓ | ✓ |
+| view_config | ✓ | ✓ | ✓ | |
 | disconnect_sessions | ✓ | ✓ | ✓ | |
 | view_logs | ✓ | ✓ | ✓ | |
 | apply_config, rollback_config | ✓ | ✓ | | |
@@ -47,7 +48,7 @@ sudo bngctl admin list | passwd <name> | disable <name> | enable <name> | delete
 A config apply requires `apply_config` **plus** one permission per changed top-level
 section: `shaper` → `change_qos`, `radius`/`aaa` → `change_radius`, `nat` → `change_nat`,
 anything else → `change_network`. `POST /api/config/validate` reports what a candidate needs.
-Status endpoints are readable by any logged-in role.
+Status endpoints are readable by any logged-in role; reading or validating the configuration needs `view_config`.
 
 ## Endpoints
 
@@ -67,9 +68,9 @@ Status endpoints are readable by any logged-in role.
 | GET | `/api/qos/status` — rate guard + active sessions per plan rate | login |
 | GET / PUT | `/api/qos/config` — the `shaper` section | login / change_qos + apply_config |
 | GET | `/api/nat/status`, `/api/nat/pools` | login |
-| GET | `/api/config`, `/api/config/history` | login |
-| GET | `/api/config/versions/{n}` (download YAML), `/api/config/versions/{n}/diff?against=m` | login |
-| POST | `/api/config/validate` `{"config": {...}}` | login |
+| GET | `/api/config`, `/api/config/history` | view_config |
+| GET | `/api/config/versions/{n}` (download YAML), `/api/config/versions/{n}/diff?against=m` | view_config |
+| POST | `/api/config/validate` `{"config": {...}}` | view_config |
 | POST | `/api/config/apply` `{"config": {...}, "allow_restart": false}` | apply_config + section permissions |
 | POST | `/api/config/rollback` `{"version": null, "allow_restart": false}` | rollback_config |
 | GET | `/api/audit` (DB: logins, API actions), `/api/audit/node` (node JSONL: CLI + API changes) | view_logs |

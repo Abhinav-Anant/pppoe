@@ -242,6 +242,9 @@ class Bench:
         cand = dict(cfg)
         cand["ip_pools"] = {**cfg["ip_pools"], "default": "bench",
                             "pools": cfg["ip_pools"]["pools"] + [{"name": "bench", "network": str(net)}]}
+        if cand.get("nat"):  # the bench pool must sit inside a NAT subscribers network (config validation)
+            first, *rest = cand["nat"]["pools"]
+            cand["nat"] = {**cand["nat"], "pools": [{**first, "subscribers": [*first["subscribers"], str(net)]}, *rest]}
         (self.tmp / "config.bench.yaml").write_text(yaml.safe_dump(cand, sort_keys=False))
         base = self.active()
         self.log(self.mgr.apply(self.tmp / "config.bench.yaml", self.admin, "benchmark", allow_restart=True))

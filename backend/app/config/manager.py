@@ -306,6 +306,7 @@ class ConfigManager:
 
     def restore_archive(self, archive: Path, admin: str, source: str, allow_restart: bool = False) -> str:
         old_secret = _read(self.paths.secret)
+        old_each = {f: _read(f) for f in self.paths.radius_secrets.glob("*.secret")} if self.paths.radius_secrets.is_dir() else {}
         with tempfile.TemporaryDirectory() as tmp:
             with tarfile.open(archive) as t:
                 t.extractall(tmp, filter="data")
@@ -313,9 +314,18 @@ class ConfigManager:
             new_secret = _read(etc / "secrets" / "radius.secret")
             if new_secret is not None:
                 _write(self.paths.secret, new_secret, 0o600)
+            for f in (etc / "secrets" / "radius").glob("*.secret"):  # per-server secrets
+                self.paths.radius_secrets.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _write(self.paths.radius_secrets / f.name, _read(f), 0o600)
             try:
                 return self.apply(etc / "config.yaml", admin, source, allow_restart)
             except ApplyError:
                 if old_secret is not None:
                     _write(self.paths.secret, old_secret, 0o600)
+                if self.paths.radius_secrets.is_dir():
+                    for f in self.paths.radius_secrets.glob("*.secret"):
+                        if f not in old_each:
+                            f.unlink()
+                for f, text in old_each.items():
+                    _write(f, text, 0o600)
                 raise
