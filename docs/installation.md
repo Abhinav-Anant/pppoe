@@ -28,6 +28,17 @@ does not exist, and adds an `include` for `/etc/bng-platform/nftables/*.nft` to
 `/etc/nftables.conf` (backup kept). It **never edits netplan or NIC configuration**.
 Re-running it is safe.
 
+## Turnkey (fresh node)
+
+```bash
+git clone git@github.com:Abhinav-Anant/pppoe.git && cd pppoe
+sudo bash scripts/bootstrap.sh [admin-name]   # GUI build, install.sh (incl. easywall), first super_admin
+```
+
+Moving a node: `sudo scripts/backup.sh` on the old one (config, secrets, TLS identity, easywall, database),
+then `sudo scripts/restore.sh <archive>` on the new one after bootstrap. The archive holds secrets.
+`EASYWALL=0 scripts/install.sh` skips easywall.
+
 ## First start (lab)
 
 ```bash
