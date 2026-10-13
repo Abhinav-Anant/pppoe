@@ -125,6 +125,10 @@ fi
 
 log "easywall web console"
 EWWEB=/etc/easywall/web.toml
+# EASYWALL=0 skips it; it needs amd64 and is installed once (easywall-install.sh pins and verifies the .deb)
+if [ ! -f "$EWWEB" ] && [ "${EASYWALL:-1}" != 0 ] && [ "$(dpkg --print-architecture)" = amd64 ]; then
+  bash "$SRC/scripts/easywall-install.sh"
+fi
 if [ -f "$EWWEB" ]; then
   # Only the BNG console (bng-api, on loopback) may reach it: it is framed at /easywall/.
   cp -a "$EWWEB" "$EWWEB.bng-backup"
